@@ -1,0 +1,28 @@
+{
+  "users": [
+    {
+      "id": "user-e969eb16-d4ce-409c-a7f8-c95231a19dff",
+      "username": "fatemehsgh",
+      "email": "fatemeh.sgh65@gmail.com",
+      "name": "fatemeh",
+      "passwordHash": "c5e7b7335571d6c6ec87e11b4801eb09205a394d4abefb8bec55b5708d6cdbbb",
+      "passwordSalt": "51341b84e47d7c18",
+      "avatar": "🪐",
+      "bio": "",
+      "createdAt": "2026-10-19T10:56:04.570Z",
+      "isGoogle": true,
+      "googleId": "google-3bc86a6420b062d2"
+    }
+  ],
+  "sessions": {
+    "febbf636295d5644b61ec9966e8fa853915b3116b1547ade": {
+      "userId": "user-e969eb16-d4ce-409c-a7f8-c95231a19dff",
+      "createdAt": 1792407364570
+    },
+    "647287867c3ffb430ffc816ad0da846453389ff5976c2399": {
+      "userId": "user-e969eb16-d4ce-409c-a7f8-c95231a19dff",
+      "createdAt": 1792487325945
+    }
+  },
+  "movies": []
+}

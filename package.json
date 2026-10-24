@@ -1,0 +1,12 @@
+{
+  "name": "cinelog-movie-history",
+  "version": "1.0.0",
+  "description": "برنامه هوشمند ثبت تاریخچه و خاطرات فیلم‌ها با سیستم حساب کاربری",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "keywords": ["cinema", "movie-tracker", "persian", "watchlist"],
+  "author": "",
+  "license": "MIT"
+}
