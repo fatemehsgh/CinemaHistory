@@ -174,56 +174,30 @@ const server = http.createServer(async (req, res) => {
     const { username, password } = body;
 
     if (!username || !username.trim()) {
-      return sendJSON(400, { error: 'نام کاربری یا آدرس ایمیل را وارد کنید.' });
+      return sendJSON(400, { error: 'لطفاً نام کاربری یا ایمیل خود را وارد کنید.' });
+    }
+
+    if (!password || !password.trim()) {
+      return sendJSON(400, { error: 'لطفاً رمز عبور خود را وارد کنید.' });
     }
 
     const cleanInput = username.trim().toLowerCase();
-    let user = db.users.find(u => 
+    const user = db.users.find(u => 
       (u.username && u.username.toLowerCase() === cleanInput) || 
       (u.email && u.email.toLowerCase() === cleanInput)
     );
 
-    // If user not found, but it is an email address: auto-register and log in!
-    if (!user && cleanInput.includes('@')) {
-      const baseUsername = cleanInput.split('@')[0];
-      let finalUsername = baseUsername;
-      let counter = 1;
-      while (db.users.some(u => u.username && u.username.toLowerCase() === finalUsername.toLowerCase())) {
-        finalUsername = `${baseUsername}${counter++}`;
-      }
-      user = {
-        id: 'user-' + crypto.randomUUID(),
-        username: finalUsername,
-        email: cleanInput,
-        name: baseUsername,
-        avatar: '🎬',
-        isGoogle: true,
-        bio: 'ورود با ایمیل 🎬',
-        createdAt: new Date().toISOString()
-      };
-      if (password) {
-        const salt = crypto.randomBytes(8).toString('hex');
-        user.passwordSalt = salt;
-        user.passwordHash = hashPassword(password, salt);
-      }
-      db.users.push(user);
-    }
-
     if (!user) {
-      return sendJSON(401, { error: 'کاربری با این نام کاربری یا ایمیل یافت نشد.' });
+      return sendJSON(401, { error: 'کاربری با این نام کاربری یا ایمیل یافت نشد. لطفاً ابتدا ثبت‌نام کنید.' });
     }
 
-    // If password was provided and user has a password set, verify it
-    if (password && user.passwordHash) {
-      const calculatedHash = hashPassword(password, user.passwordSalt);
-      if (calculatedHash !== user.passwordHash) {
-        return sendJSON(401, { error: 'رمز عبور وارد شده نادرست است.' });
-      }
-    } else if (password && !user.passwordHash) {
-      // First time setting password for this account
-      const salt = crypto.randomBytes(8).toString('hex');
-      user.passwordSalt = salt;
-      user.passwordHash = hashPassword(password, salt);
+    if (!user.passwordHash || !user.passwordSalt) {
+      return sendJSON(401, { error: 'برای این حساب رمز عبوری ثبت نشده است. لطفاً از طریق ثبت‌نام یا اکانت گوگل اقدام نمایید.' });
+    }
+
+    const calculatedHash = hashPassword(password, user.passwordSalt);
+    if (calculatedHash !== user.passwordHash) {
+      return sendJSON(401, { error: 'رمز عبور وارد شده نادرست است.' });
     }
 
     const token = crypto.randomBytes(24).toString('hex');
@@ -279,7 +253,7 @@ const server = http.createServer(async (req, res) => {
     });
   }
 
-  // 2.5 Auth: Google OAuth & Direct Gmail Login
+  // 2.5 Auth: Google OAuth (Google Identity Services JWT)
   if (pathname === '/api/google-login' && req.method === 'POST') {
     const db = readDB();
     const body = await parseBody(req);
@@ -288,7 +262,7 @@ const server = http.createServer(async (req, res) => {
     let avatar = body.avatar || '🎬';
     let googleId = '';
 
-    // Case 1: Official Google JWT Credential from Google Identity Services
+    // Only official Google JWT Credential from Google Identity Services is accepted
     if (body.credential) {
       try {
         const parts = body.credential.split('.');
@@ -303,17 +277,11 @@ const server = http.createServer(async (req, res) => {
       } catch (e) {
         console.error('Failed to parse Google JWT:', e);
       }
-    } else if (body.email) {
-      // Case 2: Direct Google account / Gmail sign-in
-      email = body.email.trim();
-      name = body.name ? body.name.trim() : email.split('@')[0];
-      avatar = body.avatar || avatar || '🎬';
-      googleId = body.googleId || ('google-' + crypto.createHash('md5').update(email.toLowerCase()).digest('hex').slice(0, 16));
     }
 
-    if (!email) {
+    if (!email || !googleId) {
       return sendJSON(400, { 
-        error: 'ایمیل معتبر برای ورود با گوگل دریافت نشد.' 
+        error: 'توکن معتبر گوگل دریافت نشد. لطفاً از دکمه رسمی ورود با گوگل استفاده کنید.' 
       });
     }
 

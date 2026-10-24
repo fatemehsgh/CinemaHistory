@@ -210,20 +210,28 @@ function localApiFallback(endpoint, method = 'GET', body = null) {
 
   // POST /api/login
   if (cleanEndpoint === '/api/login' && method === 'POST') {
-    const { username } = body || {};
-    const users = JSON.parse(localStorage.getItem('cinelog_users') || '[]');
-    let user = users.find(u => u.username?.toLowerCase() === (username || '').toLowerCase());
-    if (!user) {
-      user = {
-        id: 'usr-' + Date.now(),
-        name: username || 'کاربر سینما',
-        username: username || 'user',
-        avatar: '🎬',
-        bio: 'علاقه‌مند به سینما'
-      };
-      users.push(user);
-      localStorage.setItem('cinelog_users', JSON.stringify(users));
+    const { username, password } = body || {};
+    if (!username || !username.trim()) {
+      throw new Error('لطفاً نام کاربری یا ایمیل خود را وارد کنید.');
     }
+    if (!password || !password.trim()) {
+      throw new Error('لطفاً رمز عبور خود را وارد کنید.');
+    }
+    const cleanUser = username.trim().toLowerCase();
+    const users = JSON.parse(localStorage.getItem('cinelog_users') || '[]');
+    let user = users.find(u => 
+      (u.username && u.username.toLowerCase() === cleanUser) ||
+      (u.email && u.email.toLowerCase() === cleanUser)
+    );
+
+    if (!user) {
+      throw new Error('کاربری با این مشخصات یافت نشد. لطفاً ابتدا از تب ثبت‌نام حساب بسازید.');
+    }
+
+    if (user.password && user.password !== password) {
+      throw new Error('رمز عبور وارد شده نادرست است.');
+    }
+
     const token = 'local-token-' + Date.now();
     localStorage.setItem('cinelog_token', token);
     localStorage.setItem('cinelog_user', JSON.stringify(user));
@@ -232,15 +240,27 @@ function localApiFallback(endpoint, method = 'GET', body = null) {
 
   // POST /api/register
   if (cleanEndpoint === '/api/register' && method === 'POST') {
-    const { name, username, avatar } = body || {};
+    const { name, username, email, password, avatar } = body || {};
+    if (!username || !username.trim()) {
+      throw new Error('وارد کردن نام کاربری الزامی است.');
+    }
+    if (!password || password.length < 4) {
+      throw new Error('رمز عبور باید حداقل ۴ کاراکتر باشد.');
+    }
+    const cleanUser = username.trim().toLowerCase();
+    const users = JSON.parse(localStorage.getItem('cinelog_users') || '[]');
+    if (users.some(u => u.username?.toLowerCase() === cleanUser)) {
+      throw new Error('این نام کاربری قبلاً ثبت شده است. لطفاً نام دیگری انتخاب کنید.');
+    }
     const user = {
       id: 'usr-' + Date.now(),
-      name: name || username || 'کاربر سینما',
-      username: username || 'user',
+      name: name || username,
+      username: username.trim(),
+      email: (email || '').trim(),
+      password: password,
       avatar: avatar || '🎬',
       bio: 'دفترچه خاطرات سینمایی من'
     };
-    const users = JSON.parse(localStorage.getItem('cinelog_users') || '[]');
     users.push(user);
     localStorage.setItem('cinelog_users', JSON.stringify(users));
     const token = 'local-token-' + Date.now();
@@ -1064,14 +1084,16 @@ function setupAuthModal() {
           <button type="button" class="quick-account-btn full-width" id="btnQuickAccountLogin">
             <span class="quick-account-avatar">${primary.avatar || '🪐'}</span>
             <div class="quick-account-text">
-              <span class="quick-account-title">ورود با ۱ کلیک: <strong>${escapeHTML(primary.name || primary.username)}</strong></span>
+              <span class="quick-account-title">انتخاب حساب: <strong>${escapeHTML(primary.name || primary.username)}</strong></span>
               <span class="quick-account-email">${escapeHTML(primary.email || primary.username)}</span>
             </div>
             <span class="quick-account-arrow">➔</span>
           </button>
         `;
-        document.getElementById('btnQuickAccountLogin')?.addEventListener('click', async () => {
-          await executeDirectGoogleLogin(primary.email || primary.username, primary.name);
+        document.getElementById('btnQuickAccountLogin')?.addEventListener('click', () => {
+          DOM.loginUsername.value = primary.username || primary.email;
+          DOM.loginPassword.focus();
+          showToast('حساب انتخاب شد؛ لطفاً رمز عبور را وارد کنید.', 'info');
         });
       } else {
         DOM.quickSavedAccountBar.style.display = 'none';
@@ -1124,9 +1146,8 @@ function setupAuthModal() {
       return;
     }
 
-    // Direct passwordless sign-in if email entered without password
-    if (username.includes('@') && !password) {
-      await executeDirectGoogleLogin(username);
+    if (!password) {
+      showToast('لطفاً رمز عبور خود را وارد کنید.', 'error');
       return;
     }
 
@@ -1140,13 +1161,7 @@ function setupAuthModal() {
       showToast(`خوش آمدید، ${STATE.user.name}! 🎬`, 'success');
       await loadMovies();
     } catch (err) {
-      // If error occurred and input is an email, seamlessly fall back to email login
-      if (username.includes('@')) {
-        showToast('ورود با ایمیل در حال پردازش...', 'info');
-        await executeDirectGoogleLogin(username);
-      } else {
-        showToast(err.message, 'error');
-      }
+      showToast(err.message || 'نام کاربری یا رمز عبور اشتباه است.', 'error');
     }
   });
 

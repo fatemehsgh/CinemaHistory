@@ -12,6 +12,17 @@
       "createdAt": "2026-10-19T10:56:04.570Z",
       "isGoogle": true,
       "googleId": "google-3bc86a6420b062d2"
+    },
+    {
+      "id": "user-8b4ff229-226e-4e49-b6fa-9cf8d3df3256",
+      "username": "test_1792836300173",
+      "email": "",
+      "name": "تستر",
+      "passwordHash": "f7f0e718e23afb1e9479ec3290b44b40cbc9b5c805d9b9c77b5332f06142f816",
+      "passwordSalt": "72249dd67cc763c4",
+      "avatar": "🎬",
+      "bio": "",
+      "createdAt": "2026-10-24T10:05:00.205Z"
     }
   ],
   "sessions": {
@@ -22,6 +33,14 @@
     "647287867c3ffb430ffc816ad0da846453389ff5976c2399": {
       "userId": "user-e969eb16-d4ce-409c-a7f8-c95231a19dff",
       "createdAt": 1792487325945
+    },
+    "197e954ef0567732fe9eb9a0c03d95f21cd9d0fd39070098": {
+      "userId": "user-8b4ff229-226e-4e49-b6fa-9cf8d3df3256",
+      "createdAt": 1792836300205
+    },
+    "78ae703f3e79976bede545216fb638fcc1a85f22592cc698": {
+      "userId": "user-8b4ff229-226e-4e49-b6fa-9cf8d3df3256",
+      "createdAt": 1792836300223
     }
   },
   "movies": []
