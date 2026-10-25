@@ -23,7 +23,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&family=Vazirmatn:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
   
-  <link rel="stylesheet" href="style.css?v=2.2.2">
+  <link rel="stylesheet" href="style.css?v=2.3.0">
 </head>
 <body>
   <!-- Ambient Background Glows -->
@@ -158,6 +158,16 @@
       </div>
 
       <div class="filters-row">
+        <!-- Media Type Filter -->
+        <div class="filter-group">
+          <label for="filterMediaType">نوع اثر:</label>
+          <select id="filterMediaType" class="form-select">
+            <option value="all">همه (فیلم و سریال)</option>
+            <option value="movie">🎬 فیلم‌ها</option>
+            <option value="series">📺 سریال‌ها</option>
+          </select>
+        </div>
+
         <!-- Watch Year Filter -->
         <div class="filter-group">
           <label for="filterWatchYear">سالی که دیدم:</label>
@@ -308,10 +318,33 @@
             </div>
           </div>
 
-          <!-- 3. Genres (Auto-filled from net) -->
-          <div class="form-group">
-            <label for="movieGenres">ژانر فیلم:</label>
-            <input type="text" id="movieGenres" class="form-input" placeholder="علمی‌تخیلی، ماجراجویی، درام">
+          <!-- 3. Media Type (فیلم یا سریال) -->
+          <div class="form-group media-type-group">
+            <label class="media-type-label">نوع اثر: <span class="required">*</span></label>
+            <div class="media-type-radios" id="mediaTypeRadios">
+              <label class="media-type-option active" id="labelTypeMovie">
+                <input type="radio" name="mediaType" value="movie" id="radioTypeMovie" checked>
+                <span class="media-type-icon">🎬</span>
+                <span class="media-type-text">فیلم سینمایی</span>
+              </label>
+              <label class="media-type-option" id="labelTypeSeries">
+                <input type="radio" name="mediaType" value="series" id="radioTypeSeries">
+                <span class="media-type-icon">📺</span>
+                <span class="media-type-text">سریال تلویزیونی</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- 4. Selectable Genres (انتخاب ژانرها) -->
+          <div class="form-group genres-picker-group">
+            <div class="field-label-row">
+              <label>ژانرها (برای انتخاب یا حذف کلیک کنید): <span class="required">*</span></label>
+              <span class="selected-genres-counter" id="selectedGenresCounter">۰ انتخاب شده</span>
+            </div>
+            <div class="genre-selector-container" id="genreChipsContainer">
+              <!-- Dynamically populated genre chips -->
+            </div>
+            <input type="hidden" id="movieGenres" value="">
           </div>
 
           <!-- 4. Compact Rating ONLY with 1 to 10 Clickable Stars -->
@@ -587,7 +620,7 @@
   <div id="toastContainer" class="toast-container"></div>
 
   <!-- Scripts -->
-  <script src="curated-movies.js?v=2.2.2"></script>
-  <script src="app.js?v=2.2.2"></script>
+  <script src="curated-movies.js?v=2.3.0"></script>
+  <script src="app.js?v=2.3.0"></script>
 </body>
 </html>

@@ -72,6 +72,7 @@ const DOM = {
   // Toolbar
   searchInput: document.getElementById('searchInput'),
   btnClearSearch: document.getElementById('btnClearSearch'),
+  filterMediaType: document.getElementById('filterMediaType'),
   filterWatchYear: document.getElementById('filterWatchYear'),
   filterRating: document.getElementById('filterRating'),
   sortBy: document.getElementById('sortBy'),
@@ -99,6 +100,13 @@ const DOM = {
   fetchResultsDropdown: document.getElementById('fetchResultsDropdown'),
   movieReleaseYear: document.getElementById('movieReleaseYear'),
   movieWatchYear: document.getElementById('movieWatchYear'),
+  mediaTypeRadios: document.getElementById('mediaTypeRadios'),
+  radioTypeMovie: document.getElementById('radioTypeMovie'),
+  radioTypeSeries: document.getElementById('radioTypeSeries'),
+  labelTypeMovie: document.getElementById('labelTypeMovie'),
+  labelTypeSeries: document.getElementById('labelTypeSeries'),
+  genreChipsContainer: document.getElementById('genreChipsContainer'),
+  selectedGenresCounter: document.getElementById('selectedGenresCounter'),
   movieGenres: document.getElementById('movieGenres'),
   starRatingContainer: document.getElementById('starRatingContainer'),
   ratingDisplayBadge: document.getElementById('ratingDisplayBadge'),
@@ -538,7 +546,8 @@ function renderMovies() {
         <img src="${posterUrl}" alt="${movie.title}" loading="lazy" onerror="this.src='https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=600&q=80'">
         <div class="poster-overlay">
           <div class="top-badges">
-            <span class="badge badge-year">${movie.releaseYear}</span>
+            <span class="badge badge-year">${movie.releaseYear || ''}</span>
+            <span class="badge badge-type">${movie.mediaType === 'series' ? '📺 سریال' : '🎬 فیلم'}</span>
             <button class="fav-star-btn ${movie.isFavorite ? 'is-fav' : ''}" title="نشان کردن به عنوان برگزیده" data-fav-id="${movie.id}">
               ${movie.isFavorite ? '❤️' : '🤍'}
             </button>
@@ -629,6 +638,7 @@ function renderMovies() {
 // ========================================================
 function applyFiltersAndSort() {
   const query = (DOM.searchInput.value || '').trim().toLowerCase();
+  const mediaTypeFilter = DOM.filterMediaType ? DOM.filterMediaType.value : 'all';
   const watchYearFilter = DOM.filterWatchYear.value;
   const ratingFilter = DOM.filterRating.value;
   const sort = DOM.sortBy.value;
@@ -637,6 +647,10 @@ function applyFiltersAndSort() {
   DOM.btnClearSearch.style.display = query ? 'block' : 'none';
 
   let list = [...STATE.movies];
+
+  if (mediaTypeFilter !== 'all') {
+    list = list.filter(m => (m.mediaType || 'movie') === mediaTypeFilter);
+  }
 
   if (query) {
     list = list.filter(m => {
@@ -827,12 +841,14 @@ async function searchMoviesOnlineDirect(query) {
       for (const it of (data?.d || [])) {
         if (it.qid === 'movie' || it.q === 'feature' || it.qid === 'tvSeries') {
           if (matchesQuery(it.l)) {
+            const isSeries = it.qid === 'tvSeries' || it.q === 'TV series';
             results.push({
               title: it.l,
-              releaseYear: it.y || 2024,
+              releaseYear: it.y || new Date().getFullYear(),
               synopsis: '',
               poster: it.i?.imageUrl || '',
-              genres: ['سینما']
+              mediaType: isSeries ? 'series' : 'movie',
+              genres: [isSeries ? 'سریال' : 'درام']
             });
           }
         }
@@ -851,21 +867,41 @@ async function searchMoviesOnlineDirect(query) {
         try {
           const sumUrl = `https://${domain}/api/rest_v1/page/summary/${encodeURIComponent(t)}`;
           const s = await fetch(sumUrl, { signal: AbortSignal.timeout(2500) }).then(r => r.json());
-          const isFilm = t.includes('فیلم') || t.includes('(film)') || 
+          const isSeries = (s.description || '').includes('مجموعه تلویزیونی') || 
+                           (s.description || '').toLowerCase().includes('television series') ||
+                           t.includes('مجموعه تلویزیونی') || t.includes('(TV series)');
+          const isFilm = isSeries || t.includes('فیلم') || t.includes('(film)') || 
                          (s.description || '').includes('فیلم') || 
                          (s.description || '').toLowerCase().includes('film') || 
                          (s.extract || '').includes('فیلم') || 
                          (s.extract || '').toLowerCase().includes('directed by');
           if (isFilm && s.type !== 'disambiguation') {
-            const cleanTitle = s.title.replace(/\s*\(.*(فیلم|film).*\)/i, '').trim();
+            const cleanTitle = s.title.replace(/\s*\(.*(فیلم|film|مجموعه تلویزیونی|tv series).*\)/i, '').trim();
             if (!results.some(r => r.title.toLowerCase() === cleanTitle.toLowerCase())) {
               const yMatch = extractYear(s.description, s.extract);
+              const foundGenres = [];
+              const fullText = ((s.description || '') + ' ' + (s.extract || '')).toLowerCase();
+              if (/کمدی|comedy/.test(fullText)) foundGenres.push('کمدی');
+              if (/اکشن|action/.test(fullText)) foundGenres.push('اکشن');
+              if (/جنایی|crime/.test(fullText)) foundGenres.push('جنایی');
+              if (/علمی[ -]تخیلی|sci-fi/.test(fullText)) foundGenres.push('علمی‌تخیلی');
+              if (/وحشت|ترسناک|horror/.test(fullText)) foundGenres.push('وحشت');
+              if (/هیجان|thriller/.test(fullText)) foundGenres.push('هیجان‌انگیز');
+              if (/انیمیشن|animation/.test(fullText)) foundGenres.push('انیمیشن');
+              if (/معمایی|mystery/.test(fullText)) foundGenres.push('معمایی');
+              if (/ماجراجویی|adventure/.test(fullText)) foundGenres.push('ماجراجویی');
+              if (/عاشقانه|romance/.test(fullText)) foundGenres.push('عاشقانه');
+              if (/فانتزی|fantasy/.test(fullText)) foundGenres.push('فانتزی');
+              if (/درام|drama/.test(fullText)) foundGenres.push('درام');
+              if (foundGenres.length === 0) foundGenres.push(isSeries ? 'سریال' : 'درام');
+
               results.push({
                 title: cleanTitle,
-                releaseYear: yMatch || 2024,
+                releaseYear: yMatch || new Date().getFullYear(),
                 synopsis: '',
                 poster: s.thumbnail?.source || '',
-                genres: ['سینما']
+                mediaType: isSeries ? 'series' : 'movie',
+                genres: foundGenres
               });
             }
           }
@@ -957,20 +993,21 @@ function renderSearchDropdown(results) {
     div.className = 'fetch-item';
     const thumb = item.poster || 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=100&q=60';
     const yearText = item.releaseYear ? `سال ساخت: ${item.releaseYear}` : 'سال نامشخص';
-    const genreText = (item.genres && item.genres.length) ? (Array.isArray(item.genres) ? item.genres.join('، ') : item.genres) : 'سینمایی';
+    const typeLabel = item.mediaType === 'series' ? '📺 سریال' : '🎬 فیلم';
+    const genreText = (item.genres && item.genres.length) ? (Array.isArray(item.genres) ? item.genres.join('، ') : item.genres) : 'درام';
 
     div.innerHTML = `
       <img src="${thumb}" class="fetch-thumb" alt="${escapeHTML(item.title)}" onerror="this.src='https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=100&q=60'">
       <div class="fetch-info">
         <span class="fetch-title">${escapeHTML(item.title)}</span>
-        <span class="fetch-meta"><strong class="year-highlight">${yearText}</strong> • ${escapeHTML(genreText)}</span>
+        <span class="fetch-meta"><strong class="year-highlight">${yearText}</strong> • <span class="badge-type">${typeLabel}</span> • ${escapeHTML(genreText)}</span>
       </div>
       <button type="button" class="btn-select-movie-inline" title="انتخاب و پر کردن فرم">انتخاب</button>
     `;
     div.addEventListener('click', () => {
       applyMovieDetails(item);
       dropdown.style.display = 'none';
-      showToast(`فیلم «${item.title}» و سال ساخت (${item.releaseYear || 'نامشخص'}) خودکار پر شد!`, 'success');
+      showToast(`«${item.title}» (${typeLabel} ${item.releaseYear || ''}) انتخاب شد!`, 'success');
     });
     dropdown.appendChild(div);
   });
@@ -1018,6 +1055,130 @@ function translateGenreToPersian(g) {
     'western': 'وسترن'
   };
   return map[g.toLowerCase().trim()] || g;
+}
+
+const STANDARD_GENRES = [
+  'درام',
+  'کمدی',
+  'اکشن',
+  'هیجان‌انگیز',
+  'جنایی',
+  'معمایی',
+  'علمی‌تخیلی',
+  'ماجراجویی',
+  'وحشت',
+  'عاشقانه',
+  'انیمیشن',
+  'فانتزی',
+  'تاریخی',
+  'جنگی',
+  'مستند',
+  'زندگی‌نامه‌ای',
+  'خانوادگی',
+  'موزیکال',
+  'وسترن'
+];
+
+function initGenreChips() {
+  const container = DOM.genreChipsContainer;
+  if (!container) return;
+  container.innerHTML = '';
+
+  STANDARD_GENRES.forEach(g => {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'genre-choice-chip';
+    chip.dataset.genre = g;
+    chip.innerHTML = `<span class="chip-check">✓</span><span>${g}</span>`;
+    chip.addEventListener('click', (e) => {
+      e.preventDefault();
+      chip.classList.toggle('active');
+      updateSelectedGenresState();
+    });
+    container.appendChild(chip);
+  });
+}
+
+function updateSelectedGenresState() {
+  const selected = getSelectedGenres();
+  if (DOM.movieGenres) DOM.movieGenres.value = selected.join('، ');
+  if (DOM.selectedGenresCounter) {
+    DOM.selectedGenresCounter.textContent = selected.length > 0 
+      ? `${toPersianDigits(selected.length)} انتخاب شده` 
+      : '۰ انتخاب شده';
+  }
+}
+
+function getSelectedGenres() {
+  if (!DOM.genreChipsContainer) return [];
+  const chips = DOM.genreChipsContainer.querySelectorAll('.genre-choice-chip.active');
+  return Array.from(chips).map(c => c.dataset.genre);
+}
+
+function setSelectedGenres(genres) {
+  if (!DOM.genreChipsContainer) return;
+  let list = [];
+  if (Array.isArray(genres)) {
+    list = genres;
+  } else if (typeof genres === 'string') {
+    list = genres.split(/[,،]+/).map(g => g.trim()).filter(Boolean);
+  }
+
+  // Ensure any custom/incoming genre is present as a chip
+  list.forEach(g => {
+    if (g) {
+      let existing = DOM.genreChipsContainer.querySelector(`[data-genre="${g}"]`);
+      if (!existing) {
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = 'genre-choice-chip active';
+        chip.dataset.genre = g;
+        chip.innerHTML = `<span class="chip-check">✓</span><span>${g}</span>`;
+        chip.addEventListener('click', (e) => {
+          e.preventDefault();
+          chip.classList.toggle('active');
+          updateSelectedGenresState();
+        });
+        DOM.genreChipsContainer.appendChild(chip);
+      }
+    }
+  });
+
+  const allChips = DOM.genreChipsContainer.querySelectorAll('.genre-choice-chip');
+  allChips.forEach(chip => {
+    const g = chip.dataset.genre;
+    const isMatch = list.some(target => target.toLowerCase() === g.toLowerCase() || target.includes(g) || g.includes(target));
+    chip.classList.toggle('active', isMatch);
+  });
+  updateSelectedGenresState();
+}
+
+function setMediaType(type) {
+  const isSeries = type === 'series';
+  if (DOM.radioTypeMovie) DOM.radioTypeMovie.checked = !isSeries;
+  if (DOM.radioTypeSeries) DOM.radioTypeSeries.checked = isSeries;
+  if (DOM.labelTypeMovie) DOM.labelTypeMovie.classList.toggle('active', !isSeries);
+  if (DOM.labelTypeSeries) DOM.labelTypeSeries.classList.toggle('active', isSeries);
+}
+
+function getMediaType() {
+  const checked = document.querySelector('input[name="mediaType"]:checked');
+  return checked ? checked.value : 'movie';
+}
+
+function setupMediaTypeRadios() {
+  if (DOM.radioTypeMovie) {
+    DOM.radioTypeMovie.addEventListener('change', () => setMediaType('movie'));
+  }
+  if (DOM.radioTypeSeries) {
+    DOM.radioTypeSeries.addEventListener('change', () => setMediaType('series'));
+  }
+  if (DOM.labelTypeMovie) {
+    DOM.labelTypeMovie.addEventListener('click', () => setMediaType('movie'));
+  }
+  if (DOM.labelTypeSeries) {
+    DOM.labelTypeSeries.addEventListener('click', () => setMediaType('series'));
+  }
 }
 
 // Check if a text mainly talks about cast, crew, or production rather than the plot
@@ -1101,9 +1262,13 @@ async function applyMovieDetails(data) {
   DOM.movieTitle.value = data.title || '';
   DOM.movieReleaseYear.value = data.releaseYear || new Date().getFullYear();
 
+  if (data.mediaType) {
+    setMediaType(data.mediaType);
+  }
+
   if (data.genres && data.genres.length) {
-    const genres = Array.isArray(data.genres) ? data.genres.map(translateGenreToPersian).join('، ') : data.genres;
-    DOM.movieGenres.value = genres;
+    const genres = Array.isArray(data.genres) ? data.genres.map(translateGenreToPersian) : [translateGenreToPersian(data.genres)];
+    setSelectedGenres(genres);
   }
   if (data.poster) {
     DOM.moviePoster.value = data.poster;
@@ -1201,6 +1366,8 @@ function openAddModal() {
 
   DOM.movieReleaseYear.value = new Date().getFullYear();
   DOM.movieWatchYear.value = getCurrentShamsiYear();
+  setMediaType('movie');
+  setSelectedGenres(['درام']);
   setRating(9);
   updatePosterPreview('');
   DOM.fetchResultsDropdown.style.display = 'none';
@@ -1212,13 +1379,14 @@ function openAddModal() {
 function openEditModal(movie) {
   STATE.isEditMode = true;
   DOM.editMovieId.value = movie.id;
-  DOM.movieModalTitle.textContent = 'ویرایش فیلم';
+  DOM.movieModalTitle.textContent = 'ویرایش فیلم / سریال';
   DOM.btnSubmitMovieText.textContent = 'ذخیره تغییرات';
 
   DOM.movieTitle.value = movie.title || '';
   DOM.movieReleaseYear.value = movie.releaseYear || new Date().getFullYear();
   DOM.movieWatchYear.value = movie.watchYear || getCurrentShamsiYear();
-  DOM.movieGenres.value = (movie.genres || []).join('، ');
+  setMediaType(movie.mediaType || 'movie');
+  setSelectedGenres(movie.genres || ['درام']);
   DOM.movieSynopsis.value = movie.synopsis || '';
   DOM.moviePoster.value = movie.poster || '';
   DOM.movieReview.value = movie.review || '';
@@ -1241,9 +1409,10 @@ async function handleMovieFormSubmit(e) {
   const title = DOM.movieTitle.value.trim();
   const releaseYear = parseInt(DOM.movieReleaseYear.value) || new Date().getFullYear();
   const watchYear = parseInt(DOM.movieWatchYear.value) || getCurrentShamsiYear();
+  const mediaType = getMediaType();
+  let genres = getSelectedGenres();
+  if (!genres || genres.length === 0) genres = [mediaType === 'series' ? 'سریال' : 'درام'];
   const synopsis = DOM.movieSynopsis.value.trim();
-  const genresStr = DOM.movieGenres.value.trim();
-  const genres = genresStr ? genresStr.split(/[,،]+/).map(g => g.trim()).filter(Boolean) : ['سینما'];
   const rating = STATE.currentRating;
   const poster = DOM.moviePoster.value.trim() || 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=600&q=80';
   const review = DOM.movieReview.value.trim();
@@ -1253,6 +1422,7 @@ async function handleMovieFormSubmit(e) {
     title,
     releaseYear,
     watchYear,
+    mediaType,
     synopsis,
     genres,
     rating,
@@ -1307,8 +1477,9 @@ function openViewModal(movie) {
   DOM.viewPosterImg.src = movie.poster || 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=600&q=80';
   DOM.viewFavoriteBadge.style.display = movie.isFavorite ? 'block' : 'none';
 
-  DOM.viewReleaseYearBadge.textContent = `سال ساخت: ${movie.releaseYear || 'نامشخص'}`;
-  DOM.viewWatchYearBadge.textContent = `سالی که دیدم: ${toPersianDigits(movie.watchYear || '۱۴۰۳')}`;
+  const typeText = movie.mediaType === 'series' ? '📺 سریال' : '🎬 فیلم';
+  DOM.viewReleaseYearBadge.textContent = `${typeText} • سال ساخت: ${movie.releaseYear || 'نامشخص'}`;
+  DOM.viewWatchYearBadge.textContent = `سالی که دیدم: ${toPersianDigits(movie.watchYear || getCurrentShamsiYear())}`;
   DOM.viewMovieTitle.textContent = movie.title;
 
   DOM.viewGenresContainer.innerHTML = (movie.genres || []).map(g => `<span class="genre-tag">${g}</span>`).join('');
@@ -1685,6 +1856,7 @@ function setupEventListeners() {
     DOM.searchInput.value = '';
     applyFiltersAndSort();
   });
+  if (DOM.filterMediaType) DOM.filterMediaType.addEventListener('change', applyFiltersAndSort);
   DOM.filterWatchYear.addEventListener('change', applyFiltersAndSort);
   DOM.filterRating.addEventListener('change', applyFiltersAndSort);
   DOM.sortBy.addEventListener('change', applyFiltersAndSort);
@@ -1757,6 +1929,8 @@ function setupEventListeners() {
 // INITIALIZE
 // ========================================================
 window.addEventListener('DOMContentLoaded', async () => {
+  initGenreChips();
+  setupMediaTypeRadios();
   setupStarRating();
   setupLiveMovieSearch();
   setupAuthModal();

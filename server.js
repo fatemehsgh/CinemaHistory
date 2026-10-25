@@ -447,6 +447,7 @@ oLink.Save
       id: 'mov-' + crypto.randomUUID(),
       userId: user.id,
       title: body.title.trim(),
+      mediaType: body.mediaType === 'series' ? 'series' : 'movie',
       releaseYear: parseInt(body.releaseYear) || new Date().getFullYear(),
       watchYear: parseInt(body.watchYear) || getCurrentShamsiYear(),
       synopsis: body.synopsis?.trim() || 'بدون خلاصه',
@@ -482,6 +483,7 @@ oLink.Save
     const updated = {
       ...existing,
       title: body.title !== undefined ? body.title.trim() : existing.title,
+      mediaType: body.mediaType !== undefined ? (body.mediaType === 'series' ? 'series' : 'movie') : existing.mediaType,
       releaseYear: body.releaseYear !== undefined ? parseInt(body.releaseYear) : existing.releaseYear,
       watchYear: body.watchYear !== undefined ? parseInt(body.watchYear) : existing.watchYear,
       synopsis: body.synopsis !== undefined ? body.synopsis.trim() : existing.synopsis,
