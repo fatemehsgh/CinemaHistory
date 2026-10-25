@@ -482,25 +482,6 @@
 
         <!-- Auth Form View -->
         <div id="authFormView">
-          <!-- Google & Email Sign-In Option -->
-          <div class="google-auth-section">
-            <!-- Quick 1-Click Login for Saved Accounts on this Device -->
-            <div id="quickSavedAccountBar" style="display: none; margin-bottom: 10px;"></div>
-
-            <button type="button" id="btnGoogleLogin" class="btn btn-google full-width">
-              <svg class="google-icon" viewBox="0 0 24 24" width="20" height="20">
-                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
-                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
-              </svg>
-              <span>ورود مستقیم با اکانت گوگل یا ایمیل</span>
-            </button>
-            <div class="auth-divider">
-              <span>یا ورود با فرم نام کاربری و رمز</span>
-            </div>
-          </div>
-
           <div class="auth-tabs">
             <button class="auth-tab active" id="tabLogin">ورود به حساب</button>
             <button class="auth-tab" id="tabRegister">ثبت‌نام اکانت جدید</button>
@@ -509,38 +490,38 @@
           <!-- Login Form -->
           <form id="loginForm">
             <div class="form-group">
-              <label for="loginUsername">نام کاربری یا آدرس ایمیل</label>
-              <input type="text" id="loginUsername" class="form-input ltr-input" placeholder="fatemeh.sgh65@gmail.com یا username" required autocomplete="username">
+              <label for="loginUsername">نام کاربری یا ایمیل</label>
+              <input type="text" id="loginUsername" class="form-input ltr-input" placeholder="نام کاربری یا ایمیل ثبت‌شده" required autocomplete="username">
             </div>
 
             <div class="form-group">
-              <label for="loginPassword">رمز عبور (در صورت ورود با ایمیل اختیاری است)</label>
-              <input type="password" id="loginPassword" class="form-input ltr-input" placeholder="••••••" autocomplete="current-password">
+              <label for="loginPassword">رمز عبور (الزامی)</label>
+              <input type="password" id="loginPassword" class="form-input ltr-input" placeholder="••••••••" required autocomplete="current-password">
             </div>
 
-            <button type="submit" class="btn btn-primary full-width">ورود به حساب</button>
+            <button type="submit" class="btn btn-primary full-width">ورود به حساب کاربری</button>
           </form>
 
           <!-- Register Form -->
           <form id="registerForm" style="display: none;">
             <div class="form-group">
               <label for="regName">نام شما</label>
-              <input type="text" id="regName" class="form-input" placeholder="مثلاً: علی" required>
+              <input type="text" id="regName" class="form-input" placeholder="مثلاً: فاطمه" required>
             </div>
 
             <div class="form-group">
-              <label for="regEmail">ایمیل شما (جهت ورود با ایمیل)</label>
+              <label for="regUsername">نام کاربری (انگلیسی - الزامی)</label>
+              <input type="text" id="regUsername" class="form-input ltr-input" placeholder="مثلاً: fatemeh" required autocomplete="username">
+            </div>
+
+            <div class="form-group">
+              <label for="regEmail">آدرس ایمیل (اختیاری)</label>
               <input type="email" id="regEmail" class="form-input ltr-input" placeholder="user@gmail.com">
             </div>
 
             <div class="form-group">
-              <label for="regUsername">نام کاربری (انگلیسی)</label>
-              <input type="text" id="regUsername" class="form-input ltr-input" placeholder="ali" required autocomplete="username">
-            </div>
-
-            <div class="form-group">
-              <label for="regPassword">رمز عبور (حداقل ۴ کاراکتر)</label>
-              <input type="password" id="regPassword" class="form-input ltr-input" placeholder="••••••" required autocomplete="new-password">
+              <label for="regPassword">رمز عبور (حداقل ۴ کاراکتر - الزامی)</label>
+              <input type="password" id="regPassword" class="form-input ltr-input" placeholder="••••••••" required autocomplete="new-password">
             </div>
 
             <div class="form-group">
@@ -559,88 +540,13 @@
 
             <button type="submit" class="btn btn-accent full-width">ساخت حساب کاربری</button>
           </form>
-        </div>
 
-        <!-- Google Auth Dedicated View -->
-        <div id="authGoogleView" style="display: none;">
-          <div class="google-view-header">
-            <button type="button" class="btn-back-auth" id="btnBackFromGoogle">
-              <span>←</span>
-              <span>بازگشت به سایر روش‌ها</span>
-            </button>
-            <div class="google-logo-badge">
-              <svg viewBox="0 0 24 24" width="36" height="36">
-                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
-                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
-              </svg>
-            </div>
-            <h3 class="google-view-title">ورود به حساب با گوگل (Google)</h3>
-            <p class="google-view-desc">ورود فوری و امن بدون نیاز به حفظ رمز عبور</p>
-          </div>
-
-          <!-- Official Google Button Container (when Google GSI is active) -->
-          <div id="googleOfficialSection" class="google-official-section" style="display: none;">
-            <div id="googleOfficialButtonContainer"></div>
+          <!-- Official Google Section (Only active if genuine Client ID configured) -->
+          <div id="googleOfficialSection" class="google-official-section" style="display: none; margin-top: 15px;">
             <div class="auth-divider">
-              <span>یا ورود مستقیم با جیمیل</span>
+              <span>یا ورود با حساب گوگل</span>
             </div>
-          </div>
-
-          <!-- Quick Select Existing Accounts -->
-          <div id="googleSavedAccountsSection" class="google-saved-section" style="display: none;">
-            <h4 class="google-sub-title">حساب‌های شناسایی‌شده در سیستم:</h4>
-            <div id="googleSavedAccountsList" class="google-accounts-list">
-              <!-- Dynamically populated -->
-            </div>
-            <div class="auth-divider">
-              <span>یا ورود با جیمیل دیگر</span>
-            </div>
-          </div>
-
-          <!-- Direct Gmail Login Form -->
-          <form id="googleDirectForm" class="google-direct-form">
-            <div class="form-group">
-              <label for="googleDirectEmail">آدرس ایمیل جیمیل شما:</label>
-              <div class="input-with-icon">
-                <span class="input-icon">✉️</span>
-                <input type="text" id="googleDirectEmail" class="form-input ltr-input" placeholder="fatemeh.sgh65@gmail.com یا نام کاربری" required autocomplete="email">
-              </div>
-              <small class="form-help-text">رمز عبور لازم نیست؛ حساب به‌صورت امن با گوگل هماهنگ می‌شود.</small>
-            </div>
-
-            <div class="form-group">
-              <label for="googleDirectName">نام نمایشی شما (اختیاری):</label>
-              <input type="text" id="googleDirectName" class="form-input" placeholder="مثلاً: فاطمه">
-            </div>
-
-            <button type="submit" class="btn btn-google full-width" id="btnSubmitGoogleDirect">
-              <svg class="google-icon" viewBox="0 0 24 24" width="20" height="20">
-                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
-                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
-              </svg>
-              <span>ورود مستقیم با این حساب گوگل</span>
-            </button>
-          </form>
-
-          <!-- Advanced Google Settings Toggle -->
-          <div class="google-advanced-box">
-            <button type="button" id="btnToggleGoogleAdvanced" class="btn-link-toggle">
-              <span>⚙️ تنظیم Client ID رسمی گوگل (اختیاری)</span>
-            </button>
-            <div id="googleAdvancedPanel" class="google-advanced-panel" style="display: none;">
-              <p class="google-advanced-desc">اگر شناسه OAuth Client ID اختصاصی از Google Cloud دارید، می‌توانید آن را اینجا وارد کنید:</p>
-              <div class="form-group">
-                <input type="text" id="googleClientIdInput" class="form-input ltr-input" placeholder="xxxxx.apps.googleusercontent.com">
-              </div>
-              <div class="advanced-btn-row">
-                <button type="button" id="btnSaveGoogleClientId" class="btn btn-secondary btn-sm">ذخیره Client ID</button>
-                <button type="button" id="btnClearGoogleClientId" class="btn btn-outline btn-sm">حذف</button>
-              </div>
-            </div>
+            <div id="googleOfficialButtonContainer" style="display: flex; justify-content: center;"></div>
           </div>
         </div>
       </div>
