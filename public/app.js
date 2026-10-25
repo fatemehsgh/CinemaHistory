@@ -782,6 +782,7 @@ function searchLocalMovies(query) {
 async function searchMoviesOnlineDirect(query) {
   const q = query.trim();
   if (!q) return [];
+  const cleanQ = q.toLowerCase();
   const isFarsi = /[\u0600-\u06FF]/.test(q);
   const results = [];
 
@@ -799,62 +800,59 @@ async function searchMoviesOnlineDirect(query) {
     return m ? parseInt(m[1]) : 2024;
   }
 
-  function detectGenre(text) {
-    const t = text || '';
-    if (/کمدی/.test(t)) return ['کمدی'];
-    if (/اکشن/.test(t)) return ['اکشن'];
-    if (/جنایی/.test(t)) return ['جنایی'];
-    if (/علمی[ -]تخیلی|علمی تخیلی/.test(t)) return ['علمی‌تخیلی'];
-    if (/وحشت|ترسناک/.test(t)) return ['وحشت'];
-    if (/انیمیشن|پویانمایی/.test(t)) return ['انیمیشن'];
-    if (/معمایی|رازآلود/.test(t)) return ['معمایی'];
-    if (/ماجراجویی/.test(t)) return ['ماجراجویی'];
-    return ['درام'];
+  function matchesQuery(title) {
+    if (!title) return false;
+    const cleanWord = cleanQ.replace(/[^a-z0-9\u0600-\u06FF]/gi, '');
+    const cleanT = title.toLowerCase().replace(/[^a-z0-9\u0600-\u06FF]/gi, '');
+    return cleanT.includes(cleanWord) || cleanWord.includes(cleanT.slice(0, 3));
   }
 
-  // 1. If Farsi: Persian Wikipedia CirrusSearch with CORS
-  if (isFarsi) {
+  // 1. IMDb Suggestions (Gold standard for exact movie title autocomplete)
+  const cleanLatin = cleanQ.replace(/[^a-z0-9]/g, '');
+  if (cleanLatin.length >= 2) {
     try {
-      const url = `https://fa.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(q + ' فیلم')}&format=json&origin=*`;
-      const res = await fetch(url).then(r => r.json());
-      const pages = (res.query?.search || []).filter(p => p.title.includes('فیلم') || p.snippet.includes('فیلم')).slice(0, 4);
-      for (const page of pages) {
-        try {
-          const sumUrl = `https://fa.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(page.title)}`;
-          const s = await fetch(sumUrl).then(r => r.json());
-          if (s.extract && s.type !== 'disambiguation') {
-            const cleanTitle = s.title.replace(/\s*\(فیلم.*\)/, '').trim();
+      const imdbUrl = 'https://api.allorigins.win/raw?url=' + encodeURIComponent('https://v3.sg.media-imdb.com/suggestion/' + cleanLatin[0] + '/' + cleanLatin + '.json');
+      const data = await fetch(imdbUrl, { signal: AbortSignal.timeout(3500) }).then(r => r.json());
+      for (const it of (data?.d || [])) {
+        if (it.qid === 'movie' || it.q === 'feature' || it.qid === 'tvSeries') {
+          if (matchesQuery(it.l)) {
             results.push({
-              title: cleanTitle,
-              releaseYear: extractYear(s.description, s.extract),
-              synopsis: s.extract,
-              poster: s.thumbnail?.source || '',
-              genres: detectGenre(s.description + ' ' + s.extract)
+              title: it.l,
+              releaseYear: it.y || 2024,
+              synopsis: it.s ? `با نقش‌آفرینی: ${it.s}` : 'فیلم سینمایی',
+              poster: it.i?.imageUrl || '',
+              genres: ['سینما']
             });
           }
-        } catch (e) {}
+        }
       }
     } catch (e) {}
   }
 
-  // 2. English Wikipedia search (for English words or fallback)
-  if (results.length < 3) {
+  // 2. Wikipedia OpenSearch (Title prefix search on Persian & English Wikipedia)
+  if (results.length < 4) {
+    const domain = isFarsi ? 'fa.wikipedia.org' : 'en.wikipedia.org';
     try {
-      const enUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(q + ' film')}&format=json&origin=*`;
-      const enRes = await fetch(enUrl).then(r => r.json());
-      const pages = (enRes.query?.search || []).slice(0, 4);
-      for (const page of pages) {
+      const opUrl = `https://${domain}/w/api.php?action=opensearch&search=${encodeURIComponent(q)}&limit=10&format=json&origin=*`;
+      const opData = await fetch(opUrl, { signal: AbortSignal.timeout(3500) }).then(r => r.json());
+      const titles = (opData[1] || []).filter(matchesQuery);
+      for (const t of titles.slice(0, 4)) {
         try {
-          const sumUrl = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(page.title)}`;
-          const s = await fetch(sumUrl).then(r => r.json());
-          if (s.extract && s.type !== 'disambiguation') {
-            const cleanTitle = s.title.replace(/\s*\(film.*\)/i, '').trim();
+          const sumUrl = `https://${domain}/api/rest_v1/page/summary/${encodeURIComponent(t)}`;
+          const s = await fetch(sumUrl, { signal: AbortSignal.timeout(2500) }).then(r => r.json());
+          const isFilm = t.includes('فیلم') || t.includes('(film)') || 
+                         (s.description || '').includes('فیلم') || 
+                         (s.description || '').toLowerCase().includes('film') || 
+                         (s.extract || '').includes('فیلم') || 
+                         (s.extract || '').toLowerCase().includes('directed by');
+          if (isFilm && s.type !== 'disambiguation') {
+            const cleanTitle = s.title.replace(/\s*\(.*(فیلم|film).*\)/i, '').trim();
             if (!results.some(r => r.title.toLowerCase() === cleanTitle.toLowerCase())) {
-              const yearMatch = (s.description || s.extract).match(/\b(19\d\d|20\d\d)\b/);
+              const yMatch = extractYear(s.description, s.extract);
               results.push({
                 title: cleanTitle,
-                releaseYear: yearMatch ? parseInt(yearMatch[1]) : 2024,
-                synopsis: s.extract,
+                releaseYear: yMatch || 2024,
+                synopsis: s.extract || 'فیلم سینمایی',
                 poster: s.thumbnail?.source || '',
                 genres: ['سینما']
               });
@@ -865,26 +863,11 @@ async function searchMoviesOnlineDirect(query) {
     } catch (e) {}
   }
 
-  // 3. iTunes Movie Search (Free, fast, official high-res posters)
-  if (results.length < 4) {
-    try {
-      const itunesUrl = `https://itunes.apple.com/search?term=${encodeURIComponent(q)}&media=movie&limit=5`;
-      const itunesRes = await fetch(itunesUrl).then(r => r.json());
-      for (const item of (itunesRes.results || [])) {
-        const title = item.trackName;
-        if (title && !results.some(r => r.title.toLowerCase() === title.toLowerCase())) {
-          const year = item.releaseDate ? parseInt(item.releaseDate.slice(0, 4)) : 2024;
-          const highResPoster = (item.artworkUrl100 || '').replace('100x100bb', '600x600bb');
-          results.push({
-            title: title,
-            releaseYear: year,
-            synopsis: item.longDescription || item.shortDescription || 'فیلم سینمایی',
-            poster: highResPoster,
-            genres: item.primaryGenreName ? [item.primaryGenreName] : ['سینما']
-          });
-        }
-      }
-    } catch (e) {}
+  // Ensure all English synopses are translated to Persian
+  for (const item of results) {
+    if (item.synopsis && !/[\u0600-\u06FF]/.test(item.synopsis)) {
+      item.synopsis = await translateToPersian(item.synopsis);
+    }
   }
 
   return results;
