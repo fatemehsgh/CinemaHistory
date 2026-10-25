@@ -945,9 +945,45 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-lg);
-  max-height: 280px;
+  max-height: 290px;
   overflow-y: auto;
-  z-index: 50;
+  z-index: 100;
+  box-shadow: 0 15px 35px rgba(0, 0, 0, 0.85), 0 0 15px rgba(245, 158, 11, 0.15);
+}
+
+.fetch-dropdown-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  background: rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  font-size: 0.82rem;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  backdrop-filter: blur(10px);
+}
+
+.fetch-header-title {
+  font-weight: 700;
+  color: var(--gold-400);
+}
+
+.btn-close-fetch {
+  background: rgba(255, 255, 255, 0.08);
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+  transition: var(--transition);
+}
+
+.btn-close-fetch:hover {
+  background: rgba(239, 68, 68, 0.3);
+  color: #fff;
 }
 
 .fetch-item {

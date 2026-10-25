@@ -768,6 +768,118 @@ function searchLocalMovies(query) {
   }));
 }
 
+// Direct client-side movie search for GitHub Pages (and offline/static host support)
+async function searchMoviesOnlineDirect(query) {
+  const q = query.trim();
+  if (!q) return [];
+  const isFarsi = /[\u0600-\u06FF]/.test(q);
+  const results = [];
+
+  function toEnDigits(str) {
+    return (str || '').replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d));
+  }
+
+  function extractYear(desc, extract) {
+    const text = toEnDigits((desc || '') + ' ' + (extract || ''));
+    const exp = text.match(/(?:محصول|سال|اکران|منتشر(?:[\s\w‌]+)?)\s*(?:سال\s*)?(\d{4})/);
+    if (exp) return parseInt(exp[1]);
+    const dYear = toEnDigits(desc || '').match(/\b(13\d\d|14\d\d|19\d\d|20\d\d)\b/);
+    if (dYear) return parseInt(dYear[1]);
+    const m = text.match(/\b(13\d\d|14\d\d|19\d\d|20\d\d)\b/);
+    return m ? parseInt(m[1]) : 2024;
+  }
+
+  function detectGenre(text) {
+    const t = text || '';
+    if (/کمدی/.test(t)) return ['کمدی'];
+    if (/اکشن/.test(t)) return ['اکشن'];
+    if (/جنایی/.test(t)) return ['جنایی'];
+    if (/علمی[ -]تخیلی|علمی تخیلی/.test(t)) return ['علمی‌تخیلی'];
+    if (/وحشت|ترسناک/.test(t)) return ['وحشت'];
+    if (/انیمیشن|پویانمایی/.test(t)) return ['انیمیشن'];
+    if (/معمایی|رازآلود/.test(t)) return ['معمایی'];
+    if (/ماجراجویی/.test(t)) return ['ماجراجویی'];
+    return ['درام'];
+  }
+
+  // 1. If Farsi: Persian Wikipedia CirrusSearch with CORS
+  if (isFarsi) {
+    try {
+      const url = `https://fa.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(q + ' فیلم')}&format=json&origin=*`;
+      const res = await fetch(url).then(r => r.json());
+      const pages = (res.query?.search || []).filter(p => p.title.includes('فیلم') || p.snippet.includes('فیلم')).slice(0, 4);
+      for (const page of pages) {
+        try {
+          const sumUrl = `https://fa.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(page.title)}`;
+          const s = await fetch(sumUrl).then(r => r.json());
+          if (s.extract && s.type !== 'disambiguation') {
+            const cleanTitle = s.title.replace(/\s*\(فیلم.*\)/, '').trim();
+            results.push({
+              title: cleanTitle,
+              releaseYear: extractYear(s.description, s.extract),
+              synopsis: s.extract,
+              poster: s.thumbnail?.source || '',
+              genres: detectGenre(s.description + ' ' + s.extract)
+            });
+          }
+        } catch (e) {}
+      }
+    } catch (e) {}
+  }
+
+  // 2. English Wikipedia search (for English words or fallback)
+  if (results.length < 3) {
+    try {
+      const enUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(q + ' film')}&format=json&origin=*`;
+      const enRes = await fetch(enUrl).then(r => r.json());
+      const pages = (enRes.query?.search || []).slice(0, 4);
+      for (const page of pages) {
+        try {
+          const sumUrl = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(page.title)}`;
+          const s = await fetch(sumUrl).then(r => r.json());
+          if (s.extract && s.type !== 'disambiguation') {
+            const cleanTitle = s.title.replace(/\s*\(film.*\)/i, '').trim();
+            if (!results.some(r => r.title.toLowerCase() === cleanTitle.toLowerCase())) {
+              const yearMatch = (s.description || s.extract).match(/\b(19\d\d|20\d\d)\b/);
+              results.push({
+                title: cleanTitle,
+                releaseYear: yearMatch ? parseInt(yearMatch[1]) : 2024,
+                synopsis: s.extract,
+                poster: s.thumbnail?.source || '',
+                genres: ['سینما']
+              });
+            }
+          }
+        } catch (e) {}
+      }
+    } catch (e) {}
+  }
+
+  // 3. iTunes Movie Search (Free, fast, official high-res posters)
+  if (results.length < 4) {
+    try {
+      const itunesUrl = `https://itunes.apple.com/search?term=${encodeURIComponent(q)}&media=movie&limit=5`;
+      const itunesRes = await fetch(itunesUrl).then(r => r.json());
+      for (const item of (itunesRes.results || [])) {
+        const title = item.trackName;
+        if (title && !results.some(r => r.title.toLowerCase() === title.toLowerCase())) {
+          const year = item.releaseDate ? parseInt(item.releaseDate.slice(0, 4)) : 2024;
+          const highResPoster = (item.artworkUrl100 || '').replace('100x100bb', '600x600bb');
+          results.push({
+            title: title,
+            releaseYear: year,
+            synopsis: item.longDescription || item.shortDescription || 'فیلم سینمایی',
+            poster: highResPoster,
+            genres: item.primaryGenreName ? [item.primaryGenreName] : ['سینما']
+          });
+        }
+      }
+    } catch (e) {}
+  }
+
+  return results;
+}
+
 async function fetchMovieFromInternet(query, autoApplyFirst = false) {
   DOM.searchBtnSpinner.style.display = 'inline-block';
   DOM.searchBtnText.style.display = 'none';
@@ -775,18 +887,31 @@ async function fetchMovieFromInternet(query, autoApplyFirst = false) {
   let results = searchLocalMovies(query);
 
   try {
+    // If not static host, try local backend search API first
     if (!IS_STATIC_HOST) {
-      const res = await fetch(`/api/search-movie?q=${encodeURIComponent(query)}`);
-      if (res.ok) {
-        const data = await res.json();
-        if (data.results && data.results.length) {
-          data.results.forEach(item => {
-            if (!results.some(r => r.title?.toLowerCase() === item.title?.toLowerCase())) {
-              results.push(item);
-            }
-          });
+      try {
+        const res = await fetch(`/api/search-movie?q=${encodeURIComponent(query)}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.results && data.results.length) {
+            data.results.forEach(item => {
+              if (!results.some(r => r.title?.toLowerCase() === item.title?.toLowerCase())) {
+                results.push(item);
+              }
+            });
+          }
         }
-      }
+      } catch (err) {}
+    }
+
+    // If static host (GitHub Pages) or local backend returned few/no results, run direct client search!
+    if (results.length === 0 || IS_STATIC_HOST) {
+      const onlineResults = await searchMoviesOnlineDirect(query);
+      onlineResults.forEach(item => {
+        if (!results.some(r => r.title?.toLowerCase() === item.title?.toLowerCase())) {
+          results.push(item);
+        }
+      });
     }
   } catch (err) {
     console.log('Search error:', err);
@@ -803,12 +928,12 @@ async function fetchMovieFromInternet(query, autoApplyFirst = false) {
       showToast(`فیلم «${results[0].title}» و سال ساخت (${results[0].releaseYear || 'نامشخص'}) خودکار بارگذاری شد!`, 'success');
     }
   } else {
-    DOM.fetchResultsDropdown.innerHTML = `
-      <div style="padding: 14px; text-align: center; color: #94a3b8; font-size: 0.85rem;">
-        فیلمی در اینترنت پیدا نشد؛ می‌توانید مشخصات و سال ساخت را دستی وارد کنید.
-      </div>
-    `;
-    DOM.fetchResultsDropdown.style.display = 'block';
+    // Hide the dropdown completely so it never blocks or covers form inputs!
+    DOM.fetchResultsDropdown.style.display = 'none';
+    DOM.fetchResultsDropdown.innerHTML = '';
+    if (autoApplyFirst) {
+      showToast('فیلمی در اینترنت با این نام پیدا نشد؛ می‌توانید مشخصات و سال ساخت را دستی بنویسید.', 'info');
+    }
   }
 }
 
@@ -816,6 +941,19 @@ function renderSearchDropdown(results) {
   const dropdown = DOM.fetchResultsDropdown;
   dropdown.innerHTML = '';
   dropdown.style.display = 'block';
+
+  // Dropdown header with close button
+  const header = document.createElement('div');
+  header.className = 'fetch-dropdown-header';
+  header.innerHTML = `
+    <span class="fetch-header-title">نتایج جستجو (${results.length} فیلم پیشنهادی):</span>
+    <button type="button" class="btn-close-fetch" title="بستن این لیست">✕</button>
+  `;
+  header.querySelector('.btn-close-fetch').addEventListener('click', (e) => {
+    e.stopPropagation();
+    dropdown.style.display = 'none';
+  });
+  dropdown.appendChild(header);
 
   results.slice(0, 6).forEach(item => {
     const div = document.createElement('div');
@@ -1384,6 +1522,20 @@ function setupEventListeners() {
   // Clicking outside the movie search dropdown closes only the dropdown, NOT the modal
   document.addEventListener('click', (e) => {
     if (DOM.fetchResultsDropdown && !DOM.fetchResultsDropdown.contains(e.target) && e.target !== DOM.movieTitle && e.target !== DOM.btnSearchOnline) {
+      DOM.fetchResultsDropdown.style.display = 'none';
+    }
+  });
+
+  // Auto-hide search dropdown when focusing on other form fields
+  [DOM.movieReleaseYear, DOM.movieWatchYear, DOM.movieGenres, DOM.movieSynopsis, DOM.moviePoster, DOM.movieReview].forEach(input => {
+    input?.addEventListener('focus', () => {
+      if (DOM.fetchResultsDropdown) DOM.fetchResultsDropdown.style.display = 'none';
+    });
+  });
+
+  // Pressing Escape hides search dropdown
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && DOM.fetchResultsDropdown) {
       DOM.fetchResultsDropdown.style.display = 'none';
     }
   });
