@@ -989,14 +989,67 @@ function renderSearchDropdown(results) {
   });
 }
 
-function applyMovieDetails(data) {
+// Helper to translate any English text to Persian via Google Translate GTX API
+async function translateToPersian(text) {
+  if (!text || !text.trim()) return '';
+  if (/[\u0600-\u06FF]/.test(text)) return text.trim();
+  try {
+    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=fa&dt=t&q=${encodeURIComponent(text.slice(0, 800))}`;
+    const res = await fetch(url).then(r => r.json());
+    if (res && res[0]) {
+      const translated = res[0].map(x => x[0]).join('').trim();
+      if (translated) return translated;
+    }
+  } catch (e) {}
+  return text.trim();
+}
+
+function translateGenreToPersian(g) {
+  if (!g) return 'سینمایی';
+  const map = {
+    'drama': 'درام',
+    'comedy': 'کمدی',
+    'action': 'اکشن',
+    'adventure': 'ماجراجویی',
+    'sci-fi': 'علمی‌تخیلی',
+    'science fiction': 'علمی‌تخیلی',
+    'horror': 'وحشت',
+    'thriller': 'هیجان‌انگیز',
+    'mystery': 'معمایی',
+    'crime': 'جنایی',
+    'animation': 'انیمیشن',
+    'romance': 'عاشقانه',
+    'romantic': 'عاشقانه',
+    'fantasy': 'فانتزی',
+    'family': 'خانوادگی',
+    'biography': 'زندگی‌نامه‌ای',
+    'documentary': 'مستند',
+    'history': 'تاریخی',
+    'war': 'جنگی',
+    'music': 'موزیکال',
+    'musical': 'موزیکال',
+    'western': 'وسترن'
+  };
+  return map[g.toLowerCase().trim()] || g;
+}
+
+async function applyMovieDetails(data) {
   DOM.movieTitle.value = data.title || '';
   if (data.releaseYear) {
     DOM.movieReleaseYear.value = data.releaseYear;
   }
-  DOM.movieSynopsis.value = data.synopsis || '';
+
+  // Ensure synopsis is always in Persian
+  let syn = data.synopsis || '';
+  if (syn && !/[\u0600-\u06FF]/.test(syn)) {
+    DOM.movieSynopsis.value = 'در حال ترجمه خلاصه به فارسی...';
+    syn = await translateToPersian(syn);
+  }
+  DOM.movieSynopsis.value = syn || 'خلاصه داستانی در دست نیست.';
+
   if (data.genres && data.genres.length) {
-    DOM.movieGenres.value = Array.isArray(data.genres) ? data.genres.join('، ') : data.genres;
+    const genres = Array.isArray(data.genres) ? data.genres.map(translateGenreToPersian).join('، ') : data.genres;
+    DOM.movieGenres.value = genres;
   }
   if (data.poster) {
     DOM.moviePoster.value = data.poster;
@@ -1008,10 +1061,12 @@ function updatePosterPreview(url) {
   if (url && url.trim()) {
     DOM.posterPreviewImg.src = url.trim();
     DOM.posterPreviewImg.style.display = 'block';
-    DOM.posterPlaceholderText.style.display = 'none';
+    if (DOM.posterPlaceholderText) DOM.posterPlaceholderText.style.display = 'none';
+    if (DOM.posterThumbPreview) DOM.posterThumbPreview.style.borderStyle = 'solid';
   } else {
     DOM.posterPreviewImg.style.display = 'none';
-    DOM.posterPlaceholderText.style.display = 'block';
+    if (DOM.posterPlaceholderText) DOM.posterPlaceholderText.style.display = 'flex';
+    if (DOM.posterThumbPreview) DOM.posterThumbPreview.style.borderStyle = 'dashed';
   }
 }
 

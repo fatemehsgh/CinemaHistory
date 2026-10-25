@@ -329,14 +329,19 @@
             <textarea id="movieSynopsis" class="form-textarea" rows="3" placeholder="خلاصه داستان به صورت خودکار از اینترنت بارگذاری می‌شود..." required></textarea>
           </div>
 
-          <!-- 6. Poster Image URL & Preview (Auto-filled from net) -->
-          <div class="form-group">
-            <label for="moviePoster">پوستر فیلم (خودکار پیدا می‌شود یا لینک مستقیم وارد کنید)</label>
-            <div class="poster-input-row">
-              <input type="url" id="moviePoster" class="form-input ltr-input" placeholder="لینک پوستر از اینترنت...">
-              <div class="poster-thumb-preview" id="posterThumbPreview">
-                <img id="posterPreviewImg" src="" alt="پوستر" style="display: none;">
-                <span id="posterPlaceholderText">پوستر</span>
+          <!-- 6. Large Movie Poster Showcase (Auto-filled from net, no link input needed) -->
+          <div class="form-group poster-showcase-group">
+            <div class="field-label-row">
+              <label>پوستر فیلم <span class="badge-auto-field">بارگذاری خودکار</span></label>
+            </div>
+            <!-- Hidden input stores the poster URL for saving without cluttering the UI -->
+            <input type="hidden" id="moviePoster">
+            
+            <div class="large-poster-container" id="posterThumbPreview">
+              <img id="posterPreviewImg" src="" alt="پوستر فیلم" style="display: none;">
+              <div id="posterPlaceholderText" class="large-poster-placeholder">
+                <span class="poster-icon-big">🎬</span>
+                <span>پوستر فیلم با انتخاب یا جستجو خودکار در این قاب نمایش داده می‌شود</span>
               </div>
             </div>
           </div>

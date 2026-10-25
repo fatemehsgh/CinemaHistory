@@ -671,6 +671,19 @@ oLink.Save
       } catch (e) {}
     }
 
+    // Ensure all synopses are translated to Persian if in English
+    for (const item of results) {
+      if (item.synopsis && !/[\u0600-\u06FF]/.test(item.synopsis)) {
+        try {
+          const trUrl = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=fa&dt=t&q=${encodeURIComponent(item.synopsis.slice(0, 800))}`;
+          const trRes = await fetch(trUrl, { signal: AbortSignal.timeout(2500) }).then(r => r.json());
+          if (trRes && trRes[0]) {
+            item.synopsis = trRes[0].map(x => x[0]).join('').trim();
+          }
+        } catch (e) {}
+      }
+    }
+
     return sendJSON(200, { results });
   }
 
