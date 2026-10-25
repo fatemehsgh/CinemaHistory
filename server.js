@@ -518,7 +518,7 @@ oLink.Save
     return sendJSON(200, { success: true });
   }
 
-  // 10. Live Internet Movie Search (TVMaze + Persian & English Wikipedia)
+  // 10. Live Internet Movie Search (IMDb Suggestions + Persian & English Wikipedia CirrusSearch)
   if (pathname === '/api/search-movie' && req.method === 'GET') {
     const query = urlObj.searchParams.get('q');
     if (!query || !query.trim()) {
@@ -528,42 +528,75 @@ oLink.Save
     const q = query.trim();
     let results = [];
     const isFarsi = /[\u0600-\u06FF]/.test(q);
+    const UA = { 'User-Agent': 'CineLogMovieHistoryApp/2.0 (cinelog@cinelog.app)' };
 
-    // 1. If Farsi: search Persian Wikipedia
+    function toEnDigits(str) {
+      return (str || '').replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d));
+    }
+
+    function extractYear(desc, extract) {
+      const d = toEnDigits(desc || '');
+      const e = toEnDigits(extract || '');
+      
+      // 1. Try explicit 'محصول سال' or 'سال ... منتشر/اکران شد' in desc or extract
+      const explicit = (d + ' ' + e).match(/(?:محصول|سال|اکران|منتشر(?:[\s\w‌]+)?)\s*(?:سال\s*)?(\d{4})/);
+      if (explicit) return parseInt(explicit[1]);
+
+      // 2. Check desc for any 4-digit year
+      const descYear = d.match(/\b(13\d\d|14\d\d|19\d\d|20\d\d)\b/);
+      if (descYear) return parseInt(descYear[1]);
+
+      // 3. Check first sentence of extract
+      const firstSentence = e.split('.')[0] || '';
+      const firstYear = firstSentence.match(/\b(13\d\d|14\d\d|19\d\d|20\d\d)\b/);
+      if (firstYear) return parseInt(firstYear[1]);
+
+      // 4. Any year in extract
+      const anyYear = e.match(/\b(13\d\d|14\d\d|19\d\d|20\d\d)\b/);
+      return anyYear ? parseInt(anyYear[1]) : 2024;
+    }
+
+    function detectGenre(text) {
+      const t = text || '';
+      if (/کمدی/.test(t)) return ['کمدی'];
+      if (/اکشن/.test(t)) return ['اکشن'];
+      if (/جنایی/.test(t)) return ['جنایی'];
+      if (/علمی[ -]تخیلی|علمی تخیلی/.test(t)) return ['علمی‌تخیلی'];
+      if (/وحشت|ترسناک/.test(t)) return ['وحشت'];
+      if (/انیمیشن|پویانمایی/.test(t)) return ['انیمیشن'];
+      if (/معمایی|رازآلود/.test(t)) return ['معمایی'];
+      if (/ماجراجویی/.test(t)) return ['ماجراجویی'];
+      return ['درام'];
+    }
+
+    // 1. If Farsi: search Persian Wikipedia with CirrusSearch and movie keyword
     if (isFarsi) {
       try {
-        const faSearchUrl = `https://fa.wikipedia.org/w/rest.php/v1/search/title?q=${encodeURIComponent(q)}&limit=4`;
+        const faSearchUrl = `https://fa.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(q + ' فیلم')}&format=json`;
         const faSearchRes = await fetch(faSearchUrl, {
-          headers: { 'User-Agent': 'CineLogHistory/1.0' },
+          headers: UA,
           signal: AbortSignal.timeout(3500)
         });
         if (faSearchRes.ok) {
           const searchData = await faSearchRes.json();
-          for (const page of (searchData.pages || [])) {
+          const pages = (searchData.query?.search || []).filter(p => p.title.includes('فیلم') || p.snippet.includes('فیلم')).slice(0, 4);
+          for (const page of pages) {
             try {
               const summaryRes = await fetch(`https://fa.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(page.title)}`, {
-                headers: { 'User-Agent': 'CineLogHistory/1.0' },
+                headers: UA,
                 signal: AbortSignal.timeout(3000)
               });
               if (summaryRes.ok) {
                 const s = await summaryRes.json();
                 if (s.extract && s.type !== 'disambiguation') {
-                  const yearMatch = (s.description || s.extract).match(/\b(13\d\d|14\d\d|19\d\d|20\d\d)\b/);
-                  // Extract genre hint if possible
-                  let genre = 'درام';
-                  if (/کمدی/.test(s.extract)) genre = 'کمدی';
-                  else if (/اکشن/.test(s.extract)) genre = 'اکشن';
-                  else if (/جنایی/.test(s.extract)) genre = 'جنایی';
-                  else if (/علمی[ -]تخیلی/.test(s.extract)) genre = 'علمی‌تخیلی';
-                  else if (/وحشت|ترسناک/.test(s.extract)) genre = 'وحشت';
-                  else if (/انیمیشن/.test(s.extract)) genre = 'انیمیشن';
-
+                  const cleanedTitle = s.title.replace(/\s*\(فیلم.*\)/, '').trim();
+                  const releaseYear = extractYear(s.description, s.extract);
                   results.push({
-                    title: s.title.replace(/\s*\(فیلم.*\)/, ''),
-                    releaseYear: yearMatch ? parseInt(yearMatch[1]) : 2020,
+                    title: cleanedTitle,
+                    releaseYear: releaseYear,
                     synopsis: s.extract,
                     poster: s.thumbnail?.source || '',
-                    genres: [genre]
+                    genres: detectGenre(s.description + ' ' + s.extract)
                   });
                 }
               }
@@ -573,58 +606,66 @@ oLink.Save
       } catch (e) {}
     }
 
-    // 2. TVMaze API (fast, reliable, high quality posters, clean synopsis, genres)
-    try {
-      const tvRes = await fetch(`https://api.tvmaze.com/search/shows?q=${encodeURIComponent(q)}`, {
-        signal: AbortSignal.timeout(3500)
-      });
-      if (tvRes.ok) {
-        const tvData = await tvRes.json();
-        for (const item of tvData.slice(0, 4)) {
-          const show = item.show;
-          if (!show) continue;
-          const cleanSummary = (show.summary || '').replace(/<[^>]*>?/gm, '').trim();
-          results.push({
-            title: show.name,
-            releaseYear: show.premiered ? parseInt(show.premiered.slice(0, 4)) : 2020,
-            synopsis: cleanSummary || 'خلاصه داستان در دست نیست.',
-            poster: show.image?.original || show.image?.medium || '',
-            genres: show.genres && show.genres.length ? show.genres : ['درام']
-          });
+    // 2. IMDb Suggestion API (Fast, comprehensive, exact titles, exact years & official high-res posters)
+    const cleanLatin = q.toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (cleanLatin.length >= 2) {
+      try {
+        const imdbUrl = `https://v3.sg.media-imdb.com/suggestion/${cleanLatin[0]}/${cleanLatin}.json`;
+        const imdbRes = await fetch(imdbUrl, {
+          signal: AbortSignal.timeout(3500)
+        });
+        if (imdbRes.ok) {
+          const imdbData = await imdbRes.json();
+          const items = (imdbData?.d || []).filter(x => x.qid === 'movie' || x.qid === 'tvSeries' || x.q === 'feature').slice(0, 4);
+          for (const it of items) {
+            if (!results.some(r => r.title.toLowerCase() === it.l.toLowerCase())) {
+              results.push({
+                title: it.l,
+                releaseYear: it.y || 2024,
+                synopsis: it.s ? `بازیگران: ${it.s}` : 'فیلم سینمایی',
+                poster: it.i?.imageUrl || '',
+                genres: ['سینما']
+              });
+            }
+          }
         }
-      }
-    } catch (e) {}
+      } catch (e) {}
+    }
 
-    // 3. English Wikipedia Search (finds movies even if ambiguous like Interstellar)
+    // 3. English Wikipedia CirrusSearch fallback
     if (results.length < 3 && !isFarsi) {
       try {
-        const enSearchUrl = `https://en.wikipedia.org/w/rest.php/v1/search/title?q=${encodeURIComponent(q)}&limit=5`;
+        const enSearchUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(q + ' film')}&format=json`;
         const enSearchRes = await fetch(enSearchUrl, {
-          headers: { 'User-Agent': 'CineLogMovieTrackerApp/1.0 (cinelog.history.app@gmail.com)' },
+          headers: UA,
           signal: AbortSignal.timeout(3500)
         });
         if (enSearchRes.ok) {
           const searchData = await enSearchRes.json();
-          const pages = searchData.pages || [];
-          const filmPage = pages.find(p => (p.description || '').toLowerCase().includes('film') || (p.title || '').includes('(film)')) || pages[0];
-          if (filmPage) {
-            const summaryRes = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(filmPage.title)}`, {
-              headers: { 'User-Agent': 'CineLogMovieTrackerApp/1.0 (cinelog.history.app@gmail.com)' },
-              signal: AbortSignal.timeout(3000)
-            });
-            if (summaryRes.ok) {
-              const s = await summaryRes.json();
-              if (s.extract && s.type !== 'disambiguation') {
-                const yearMatch = (s.description || s.extract).match(/\b(19\d\d|20\d\d)\b/);
-                results.unshift({
-                  title: s.title.replace(/\s*\(film.*\)/i, ''),
-                  releaseYear: yearMatch ? parseInt(yearMatch[1]) : 2020,
-                  synopsis: s.extract,
-                  poster: s.thumbnail?.source || '',
-                  genres: ['سینما']
-                });
+          const pages = (searchData.query?.search || []).slice(0, 3);
+          for (const page of pages) {
+            try {
+              const summaryRes = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(page.title)}`, {
+                headers: UA,
+                signal: AbortSignal.timeout(3000)
+              });
+              if (summaryRes.ok) {
+                const s = await summaryRes.json();
+                if (s.extract && s.type !== 'disambiguation') {
+                  const cleanedTitle = s.title.replace(/\s*\(film.*\)/i, '').trim();
+                  if (!results.some(r => r.title.toLowerCase() === cleanedTitle.toLowerCase())) {
+                    const yearMatch = (s.description || s.extract).match(/\b(19\d\d|20\d\d)\b/);
+                    results.push({
+                      title: cleanedTitle,
+                      releaseYear: yearMatch ? parseInt(yearMatch[1]) : 2024,
+                      synopsis: s.extract,
+                      poster: s.thumbnail?.source || '',
+                      genres: ['سینما']
+                    });
+                  }
+                }
               }
-            }
+            } catch (err) {}
           }
         }
       } catch (e) {}

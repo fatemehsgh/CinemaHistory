@@ -729,7 +729,18 @@ function setupLiveMovieSearch() {
     // Debounce live internet search
     searchDebounceTimer = setTimeout(() => {
       fetchMovieFromInternet(q);
-    }, 400);
+    }, 350);
+  });
+
+  // Pressing Enter in title input triggers immediate search rather than premature form submit
+  DOM.movieTitle.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const q = DOM.movieTitle.value.trim();
+      if (q) {
+        fetchMovieFromInternet(q, true);
+      }
+    }
   });
 
   DOM.btnSearchOnline.addEventListener('click', () => {
@@ -744,7 +755,7 @@ function setupLiveMovieSearch() {
 
 function searchLocalMovies(query) {
   if (!window.CURATED_MOVIES) return [];
-  const q = query.toLowerCase();
+  const q = query.toLowerCase().trim();
   return window.CURATED_MOVIES.filter(m => {
     return (m.title && m.title.toLowerCase().includes(q)) ||
            (m.persianTitle && m.persianTitle.toLowerCase().includes(q));
@@ -789,12 +800,12 @@ async function fetchMovieFromInternet(query, autoApplyFirst = false) {
     if (autoApplyFirst) {
       applyMovieDetails(results[0]);
       DOM.fetchResultsDropdown.style.display = 'none';
-      showToast(`اطلاعات فیلم «${results[0].title}» از اینترنت دریافت شد!`, 'success');
+      showToast(`فیلم «${results[0].title}» و سال ساخت (${results[0].releaseYear || 'نامشخص'}) خودکار بارگذاری شد!`, 'success');
     }
   } else {
     DOM.fetchResultsDropdown.innerHTML = `
-      <div style="padding: 12px; text-align: center; color: #94a3b8; font-size: 0.85rem;">
-        اطلاعاتی در اینترنت پیدا نشد؛ می‌توانید خلاصه و سال ساخت را دستی بنویسید.
+      <div style="padding: 14px; text-align: center; color: #94a3b8; font-size: 0.85rem;">
+        فیلمی در اینترنت پیدا نشد؛ می‌توانید مشخصات و سال ساخت را دستی وارد کنید.
       </div>
     `;
     DOM.fetchResultsDropdown.style.display = 'block';
@@ -806,21 +817,25 @@ function renderSearchDropdown(results) {
   dropdown.innerHTML = '';
   dropdown.style.display = 'block';
 
-  results.slice(0, 5).forEach(item => {
+  results.slice(0, 6).forEach(item => {
     const div = document.createElement('div');
     div.className = 'fetch-item';
     const thumb = item.poster || 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=100&q=60';
+    const yearText = item.releaseYear ? `سال ساخت: ${item.releaseYear}` : 'سال نامشخص';
+    const genreText = (item.genres && item.genres.length) ? (Array.isArray(item.genres) ? item.genres.join('، ') : item.genres) : 'سینمایی';
+
     div.innerHTML = `
-      <img src="${thumb}" class="fetch-thumb" alt="${item.title}" onerror="this.src='https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=100&q=60'">
+      <img src="${thumb}" class="fetch-thumb" alt="${escapeHTML(item.title)}" onerror="this.src='https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=100&q=60'">
       <div class="fetch-info">
-        <span class="fetch-title">${item.title}</span>
-        <span class="fetch-meta">سال ساخت: ${item.releaseYear || 'نامشخص'} • ژانر: ${(item.genres || []).join('، ')}</span>
+        <span class="fetch-title">${escapeHTML(item.title)}</span>
+        <span class="fetch-meta"><strong class="year-highlight">${yearText}</strong> • ${escapeHTML(genreText)}</span>
       </div>
+      <button type="button" class="btn-select-movie-inline" title="انتخاب و پر کردن فرم">انتخاب</button>
     `;
     div.addEventListener('click', () => {
       applyMovieDetails(item);
       dropdown.style.display = 'none';
-      showToast(`خلاصه داستان، سال ساخت و پوستر فیلم «${item.title}» خودکار پر شد!`, 'success');
+      showToast(`فیلم «${item.title}» و سال ساخت (${item.releaseYear || 'نامشخص'}) خودکار پر شد!`, 'success');
     });
     dropdown.appendChild(div);
   });
@@ -828,7 +843,9 @@ function renderSearchDropdown(results) {
 
 function applyMovieDetails(data) {
   DOM.movieTitle.value = data.title || '';
-  DOM.movieReleaseYear.value = data.releaseYear || 2020;
+  if (data.releaseYear) {
+    DOM.movieReleaseYear.value = data.releaseYear;
+  }
   DOM.movieSynopsis.value = data.synopsis || '';
   if (data.genres && data.genres.length) {
     DOM.movieGenres.value = Array.isArray(data.genres) ? data.genres.join('، ') : data.genres;
@@ -908,6 +925,7 @@ function openAddModal() {
   DOM.btnSubmitMovieText.textContent = 'ذخیره در تاریخچه';
   DOM.movieForm.reset();
 
+  DOM.movieReleaseYear.value = new Date().getFullYear();
   DOM.movieWatchYear.value = 1403;
   setRating(9);
   updatePosterPreview('');
@@ -1355,10 +1373,19 @@ function setupEventListeners() {
   DOM.btnCancelMovieModal.addEventListener('click', closeMovieModal);
   DOM.movieForm.addEventListener('submit', handleMovieFormSubmit);
 
-  [DOM.movieModal, DOM.viewModal, DOM.authModal, DOM.statsModal].forEach(modal => {
-    modal.addEventListener('click', (e) => {
+  // Only close view, auth, and stats modal when clicking the backdrop.
+  // movieModal intentionally stays open so typed text / search results are NEVER lost by outside clicks!
+  [DOM.viewModal, DOM.authModal, DOM.statsModal].forEach(modal => {
+    modal?.addEventListener('click', (e) => {
       if (e.target === modal) modal.classList.remove('open');
     });
+  });
+
+  // Clicking outside the movie search dropdown closes only the dropdown, NOT the modal
+  document.addEventListener('click', (e) => {
+    if (DOM.fetchResultsDropdown && !DOM.fetchResultsDropdown.contains(e.target) && e.target !== DOM.movieTitle && e.target !== DOM.btnSearchOnline) {
+      DOM.fetchResultsDropdown.style.display = 'none';
+    }
   });
 
   DOM.btnCloseViewModal.addEventListener('click', closeViewModal);
