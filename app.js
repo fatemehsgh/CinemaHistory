@@ -203,6 +203,16 @@ function toPersianDigits(num) {
   return num.toString().replace(/\d/g, x => farsiDigits[x]);
 }
 
+function escapeHTML(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
 // ========================================================
 // AUTH & API (WITH LOCALSTORAGE STATIC HOST FALLBACK)
 // ========================================================
@@ -1361,16 +1371,7 @@ function setupAuthModal() {
     }
   });
 
-  // HTML escape helper
-  function escapeHTML(str) {
-    if (!str) return '';
-    return String(str)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#039;');
-  }
+
 
   // Clear legacy Google client id so no automatic Google popups are triggered
   localStorage.removeItem('cinelog_google_client_id');
