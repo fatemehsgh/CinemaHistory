@@ -489,7 +489,7 @@ oLink.Save
     return sendJSON(200, { movie: updated });
   }
 
-  // 9. Movies: Delete
+  // 9. Movies: Delete Single
   if (pathname.startsWith('/api/movies/') && req.method === 'DELETE') {
     const id = pathname.replace('/api/movies/', '').trim();
     const db = readDB();
@@ -503,6 +503,17 @@ oLink.Save
       return sendJSON(404, { error: 'فیلم یافت نشد.' });
     }
 
+    writeDB(db);
+    return sendJSON(200, { success: true });
+  }
+
+  // 9.b Movies: Delete All
+  if (pathname === '/api/movies' && req.method === 'DELETE') {
+    const db = readDB();
+    const user = getAuthUser(req, db);
+    if (!user) return sendJSON(401, { error: 'عدم دسترسی' });
+
+    db.movies = db.movies.filter(m => m.userId !== user.id);
     writeDB(db);
     return sendJSON(200, { success: true });
   }

@@ -2,6 +2,30 @@
 // CINELOG - APPLICATION CONTROLLER (REFINED VERSION)
 // ========================================================
 
+// Clean up initial sample movies so the user starts with a completely empty movie list
+(function cleanInitialSampleMovies() {
+  try {
+    const cleanList = (key) => {
+      const raw = localStorage.getItem(key);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          const filtered = parsed.filter(m => !m.id || !m.id.startsWith('mov-init-'));
+          localStorage.setItem(key, JSON.stringify(filtered));
+        }
+      }
+    };
+    cleanList('cinelog_movies');
+    cleanList('cinelog_local_movies');
+
+    if (!localStorage.getItem('cinelog_movies_cleared_v2')) {
+      localStorage.setItem('cinelog_movies', JSON.stringify([]));
+      localStorage.setItem('cinelog_local_movies', JSON.stringify([]));
+      localStorage.setItem('cinelog_movies_cleared_v2', 'true');
+    }
+  } catch (e) {}
+})();
+
 const STATE = {
   token: localStorage.getItem('cinelog_token') || '',
   user: null,
@@ -37,6 +61,7 @@ const DOM = {
   btnOpenStats: document.getElementById('btnOpenStats'),
   btnExportData: document.getElementById('btnExportData'),
   btnCreateDesktopShortcut: document.getElementById('btnCreateDesktopShortcut'),
+  btnClearAllMovies: document.getElementById('btnClearAllMovies'),
 
   // Stats
   statTotalCount: document.getElementById('statTotalCount'),
@@ -279,23 +304,6 @@ function localApiFallback(endpoint, method = 'GET', body = null) {
   // GET /api/movies
   if (cleanEndpoint === '/api/movies' && method === 'GET') {
     let movies = JSON.parse(localStorage.getItem('cinelog_movies') || '[]');
-    if (movies.length === 0 && window.CURATED_MOVIES && window.CURATED_MOVIES.length) {
-      movies = window.CURATED_MOVIES.slice(0, 4).map((m, idx) => ({
-        id: 'mov-init-' + (idx + 1),
-        title: m.title,
-        persianTitle: m.persianTitle || '',
-        releaseYear: m.releaseYear || 2020,
-        watchYear: 1403,
-        genres: m.genres || ['درام'],
-        rating: 10 - idx,
-        synopsis: m.synopsis || '',
-        poster: m.poster || '',
-        review: idx === 0 ? 'یکی از تاثیرگذارترین و زیباترین فیلم‌هایی که تا به حال دیدم.' : '',
-        isFavorite: idx < 2,
-        createdAt: new Date().toISOString()
-      }));
-      localStorage.setItem('cinelog_movies', JSON.stringify(movies));
-    }
     return { movies };
   }
 
@@ -325,12 +333,19 @@ function localApiFallback(endpoint, method = 'GET', body = null) {
     return { success: true };
   }
 
-  // DELETE /api/movies/:id
+  // DELETE /api/movies/:id (Single)
   if (cleanEndpoint.startsWith('/api/movies/') && method === 'DELETE') {
     const id = cleanEndpoint.replace('/api/movies/', '');
     let movies = JSON.parse(localStorage.getItem('cinelog_movies') || '[]');
     movies = movies.filter(m => m.id !== id);
     localStorage.setItem('cinelog_movies', JSON.stringify(movies));
+    return { success: true };
+  }
+
+  // DELETE /api/movies (Delete all)
+  if (cleanEndpoint === '/api/movies' && method === 'DELETE') {
+    localStorage.setItem('cinelog_movies', JSON.stringify([]));
+    localStorage.setItem('cinelog_local_movies', JSON.stringify([]));
     return { success: true };
   }
 
@@ -1394,6 +1409,31 @@ function setupEventListeners() {
   DOM.btnOpenStats.addEventListener('click', openStatsModal);
   DOM.btnCloseStatsModal.addEventListener('click', () => DOM.statsModal.classList.remove('open'));
   DOM.btnExportData.addEventListener('click', exportDataBackup);
+
+  if (DOM.btnClearAllMovies) {
+    DOM.btnClearAllMovies.addEventListener('click', async () => {
+      if (STATE.movies.length === 0) {
+        showToast('لیست فیلم‌های شما هم‌اکنون کاملاً خالی است.', 'info');
+        return;
+      }
+      if (!confirm('آیا از پاک کردن تمامی فیلم‌های ثبت‌شده مطمئن هستید؟ تمام لیست خالی خواهد شد.')) {
+        return;
+      }
+      try {
+        await apiCall('/api/movies', 'DELETE');
+      } catch (e) {
+        localStorage.setItem('cinelog_movies', JSON.stringify([]));
+        localStorage.setItem('cinelog_local_movies', JSON.stringify([]));
+      }
+      STATE.movies = [];
+      STATE.filteredMovies = [];
+      saveLocalMovies();
+      renderMovies();
+      updateStatsSummary();
+      showToast('تمامی محتویات و فیلم‌های ثبت‌شده با موفقیت پاک شدند.', 'success');
+      if (DOM.authModal) DOM.authModal.classList.remove('open');
+    });
+  }
 
   if (DOM.btnCreateDesktopShortcut) {
     DOM.btnCreateDesktopShortcut.addEventListener('click', async () => {
