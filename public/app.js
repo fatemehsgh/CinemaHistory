@@ -1106,7 +1106,6 @@ function setupAuthModal() {
   DOM.userProfileBtn.addEventListener('click', () => {
     updateUserUI();
     DOM.authModal.classList.add('open');
-    initOfficialGoogleAuth();
   });
 
   DOM.btnCloseAuthModal.addEventListener('click', () => {
@@ -1202,60 +1201,8 @@ function setupAuthModal() {
       .replace(/'/g, '&#039;');
   }
 
-  // Official Google Identity Services Initialization
-  function initOfficialGoogleAuth() {
-    let clientId = localStorage.getItem('cinelog_google_client_id') || '';
-    if (clientId && window.google?.accounts?.id && DOM.googleOfficialSection) {
-      try {
-        google.accounts.id.initialize({
-          client_id: clientId,
-          callback: window.handleGoogleCredentialResponse,
-          auto_select: false
-        });
-        DOM.googleOfficialSection.style.display = 'block';
-        DOM.googleOfficialButtonContainer.innerHTML = '';
-        google.accounts.id.renderButton(DOM.googleOfficialButtonContainer, {
-          theme: 'filled_blue',
-          size: 'large',
-          text: 'signin_with',
-          shape: 'rectangular',
-          width: 280
-        });
-      } catch (err) {
-        console.warn('Google Identity Services:', err);
-      }
-    }
-  }
-
-  // Official Google JWT Response Callback
-  window.handleGoogleCredentialResponse = async function(response) {
-    if (!response || !response.credential) return;
-    try {
-      showToast('در حال تایید امن حساب گوگل...', 'info');
-      const data = await apiCall('/api/google-login', 'POST', { credential: response.credential });
-      STATE.token = data.token;
-      STATE.user = data.user;
-      localStorage.setItem('cinelog_token', data.token);
-      updateUserUI();
-      DOM.authModal.classList.remove('open');
-      showToast(`خوش آمدید، ${STATE.user.name}! 🎬`, 'success');
-      await loadMovies();
-    } catch (err) {
-      showToast(err.message || 'خطا در ورود با گوگل', 'error');
-    }
-  };
-
-  if (DOM.btnClearGoogleClientId) {
-    DOM.btnClearGoogleClientId.addEventListener('click', async () => {
-      localStorage.removeItem('cinelog_google_client_id');
-      if (DOM.googleClientIdInput) DOM.googleClientIdInput.value = '';
-      try {
-        await apiCall('/api/google-config', 'POST', { clientId: '' });
-      } catch (e) {}
-      if (DOM.googleOfficialSection) DOM.googleOfficialSection.style.display = 'none';
-      showToast('شناسه Client ID حذف شد.', 'info');
-    });
-  }
+  // Clear legacy Google client id so no automatic Google popups are triggered
+  localStorage.removeItem('cinelog_google_client_id');
 
   DOM.btnSwitchAccount.addEventListener('click', () => {
     DOM.authLoggedInView.style.display = 'none';
