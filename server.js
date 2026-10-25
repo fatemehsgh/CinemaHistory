@@ -49,6 +49,15 @@ function hashPassword(password, salt) {
   return crypto.createHash('sha256').update(password + salt).digest('hex');
 }
 
+function getCurrentShamsiYear() {
+  try {
+    const formatted = new Intl.DateTimeFormat('en-US-u-ca-persian', { year: 'numeric' }).format(new Date());
+    const year = parseInt(formatted.replace(/[^0-9]/g, ''));
+    if (year >= 1390 && year <= 1450) return year;
+  } catch (e) {}
+  return new Date().getFullYear() - 621;
+}
+
 // Helper to parse JSON body
 function parseBody(req) {
   return new Promise((resolve, reject) => {
@@ -439,7 +448,7 @@ oLink.Save
       userId: user.id,
       title: body.title.trim(),
       releaseYear: parseInt(body.releaseYear) || new Date().getFullYear(),
-      watchYear: parseInt(body.watchYear) || 1403,
+      watchYear: parseInt(body.watchYear) || getCurrentShamsiYear(),
       synopsis: body.synopsis?.trim() || 'بدون خلاصه',
       genres: Array.isArray(body.genres) ? body.genres : (body.genres ? [body.genres] : ['عمومی']),
       rating: parseFloat(body.rating) || 5,

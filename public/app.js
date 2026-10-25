@@ -693,6 +693,16 @@ function applyFiltersAndSort() {
   renderMovies();
 }
 
+function getCurrentShamsiYear() {
+  try {
+    const formatted = new Intl.DateTimeFormat('en-US-u-ca-persian', { year: 'numeric' }).format(new Date());
+    const year = parseInt(formatted.replace(/[^0-9]/g, ''));
+    if (year >= 1390 && year <= 1450) return year;
+  } catch (e) {}
+  const gYear = new Date().getFullYear();
+  return gYear - 621;
+}
+
 function updateStatsSummary() {
   const movies = STATE.movies;
   const total = movies.length;
@@ -709,7 +719,8 @@ function updateStatsSummary() {
   const avg = (sumRating / total).toFixed(1);
   DOM.statAvgRating.textContent = toPersianDigits(avg);
 
-  const thisYearCount = movies.filter(m => (m.watchYear || 1403) === 1403).length;
+  const currentSYear = getCurrentShamsiYear();
+  const thisYearCount = movies.filter(m => (m.watchYear || currentSYear) === currentSYear).length;
   DOM.statThisYearCount.textContent = toPersianDigits(thisYearCount);
 
   const favCount = movies.filter(m => m.isFavorite).length;
@@ -1088,9 +1099,7 @@ async function fetchPureMovieStory(title, year) {
 
 async function applyMovieDetails(data) {
   DOM.movieTitle.value = data.title || '';
-  if (data.releaseYear) {
-    DOM.movieReleaseYear.value = data.releaseYear;
-  }
+  DOM.movieReleaseYear.value = data.releaseYear || new Date().getFullYear();
 
   if (data.genres && data.genres.length) {
     const genres = Array.isArray(data.genres) ? data.genres.map(translateGenreToPersian).join('، ') : data.genres;
@@ -1191,7 +1200,7 @@ function openAddModal() {
   DOM.movieForm.reset();
 
   DOM.movieReleaseYear.value = new Date().getFullYear();
-  DOM.movieWatchYear.value = 1403;
+  DOM.movieWatchYear.value = getCurrentShamsiYear();
   setRating(9);
   updatePosterPreview('');
   DOM.fetchResultsDropdown.style.display = 'none';
@@ -1207,8 +1216,8 @@ function openEditModal(movie) {
   DOM.btnSubmitMovieText.textContent = 'ذخیره تغییرات';
 
   DOM.movieTitle.value = movie.title || '';
-  DOM.movieReleaseYear.value = movie.releaseYear || 2020;
-  DOM.movieWatchYear.value = movie.watchYear || 1403;
+  DOM.movieReleaseYear.value = movie.releaseYear || new Date().getFullYear();
+  DOM.movieWatchYear.value = movie.watchYear || getCurrentShamsiYear();
   DOM.movieGenres.value = (movie.genres || []).join('، ');
   DOM.movieSynopsis.value = movie.synopsis || '';
   DOM.moviePoster.value = movie.poster || '';
@@ -1230,8 +1239,8 @@ async function handleMovieFormSubmit(e) {
   e.preventDefault();
 
   const title = DOM.movieTitle.value.trim();
-  const releaseYear = parseInt(DOM.movieReleaseYear.value) || 2020;
-  const watchYear = parseInt(DOM.movieWatchYear.value) || 1403;
+  const releaseYear = parseInt(DOM.movieReleaseYear.value) || new Date().getFullYear();
+  const watchYear = parseInt(DOM.movieWatchYear.value) || getCurrentShamsiYear();
   const synopsis = DOM.movieSynopsis.value.trim();
   const genresStr = DOM.movieGenres.value.trim();
   const genres = genresStr ? genresStr.split(/[,،]+/).map(g => g.trim()).filter(Boolean) : ['سینما'];
@@ -1752,5 +1761,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   setupLiveMovieSearch();
   setupAuthModal();
   setupEventListeners();
+  if (DOM.movieReleaseYear) DOM.movieReleaseYear.value = new Date().getFullYear();
+  if (DOM.movieWatchYear) DOM.movieWatchYear.value = getCurrentShamsiYear();
   await initAuth();
 });
