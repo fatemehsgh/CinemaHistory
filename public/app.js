@@ -819,7 +819,7 @@ async function searchMoviesOnlineDirect(query) {
             results.push({
               title: it.l,
               releaseYear: it.y || 2024,
-              synopsis: it.s ? `با نقش‌آفرینی: ${it.s}` : 'فیلم سینمایی',
+              synopsis: '',
               poster: it.i?.imageUrl || '',
               genres: ['سینما']
             });
@@ -852,7 +852,7 @@ async function searchMoviesOnlineDirect(query) {
               results.push({
                 title: cleanTitle,
                 releaseYear: yMatch || 2024,
-                synopsis: s.extract || 'فیلم سینمایی',
+                synopsis: '',
                 poster: s.thumbnail?.source || '',
                 genres: ['سینما']
               });
@@ -861,13 +861,6 @@ async function searchMoviesOnlineDirect(query) {
         } catch (e) {}
       }
     } catch (e) {}
-  }
-
-  // Ensure all English synopses are translated to Persian
-  for (const item of results) {
-    if (item.synopsis && !/[\u0600-\u06FF]/.test(item.synopsis)) {
-      item.synopsis = await translateToPersian(item.synopsis);
-    }
   }
 
   return results;
@@ -977,7 +970,7 @@ async function translateToPersian(text) {
   if (!text || !text.trim()) return '';
   if (/[\u0600-\u06FF]/.test(text)) return text.trim();
   try {
-    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=fa&dt=t&q=${encodeURIComponent(text.slice(0, 800))}`;
+    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=fa&dt=t&q=${encodeURIComponent(text.slice(0, 1000))}`;
     const res = await fetch(url).then(r => r.json());
     if (res && res[0]) {
       const translated = res[0].map(x => x[0]).join('').trim();
@@ -1016,19 +1009,88 @@ function translateGenreToPersian(g) {
   return map[g.toLowerCase().trim()] || g;
 }
 
+// Check if a text mainly talks about cast, crew, or production rather than the plot
+function isActorOrProductionText(text) {
+  if (!text) return true;
+  return /با نقش‌آفرینی|به کارگردانی|بازیگران|ستارگان|starring|directed by|stars |screenplay by/i.test(text);
+}
+
+// Extract ONLY the pure story / plot section, filtering out actors, directors, box office, etc.
+function extractPureStory(extract, isFa) {
+  if (!extract) return '';
+  const plotRegex = isFa 
+    ? /==+\s*(?:خلاصه\s*(?:فیلم|داستان)?|داستان|موضوع)\s*==+([\s\S]*?)(?:\n==+ [^=]+ ==+|$)/i
+    : /==+\s*(?:plot|premise|synopsis|storyline|story)\s*==+([\s\S]*?)(?:\n==+ [^=]+ ==+|$)/i;
+
+  const match = extract.match(plotRegex);
+  if (match && match[1]?.trim()) {
+    let plot = match[1].trim();
+    plot = plot.replace(/==+[^=]+==+/g, '').replace(/\n+/g, ' ').trim();
+    const sentences = plot.split(/(?<=[.!?؟。])\s+/);
+    let result = '';
+    for (const s of sentences) {
+      if ((result + ' ' + s).length > 500 && result.length > 80) break;
+      result += (result ? ' ' : '') + s;
+    }
+    return result || plot.slice(0, 450);
+  }
+
+  // Fallback: If no explicit plot heading, take intro and strip cast/crew sentences
+  let intro = extract.split(/\n==/)[0].trim();
+  const sentences = intro.split(/(?<=[.!?؟。])\s+/);
+  const cleanSentences = sentences.filter(s => {
+    if (/\b(directed by|written by|produced by|starring|stars|premiered|screenplay|grossed|box office|distributed by|budget of)\b/i.test(s)) return false;
+    if (/is a \d{4} .* (film|movie|series)/i.test(s) && !/(tells the story|follows|centers on|about)/i.test(s)) return false;
+    if (/به کارگردانی|به نویسندگی|تهیه‌کنندگی|با بازی|نقش‌آفرینی|به ایفای نقش|در گیشه|توزیع‌شده|فیلم‌برداری|موسیقی متن/i.test(s)) return false;
+    if (/یک فیلم .* (است که در سال|محصول سال)/i.test(s) && !/(داستان|روایت|درباره)/i.test(s)) return false;
+    return true;
+  });
+
+  let cleanIntro = cleanSentences.join(' ').trim();
+  return cleanIntro || intro.slice(0, 350);
+}
+
+// Fetch pure story/plot from Wikipedia (English or Persian) and translate if needed
+async function fetchPureMovieStory(title, year) {
+  if (!title) return '';
+  const isFa = /[\u0600-\u06FF]/.test(title);
+  const domains = isFa ? ['fa.wikipedia.org', 'en.wikipedia.org'] : ['en.wikipedia.org', 'fa.wikipedia.org'];
+
+  for (const domain of domains) {
+    const isDomainFa = domain.startsWith('fa');
+    const cands = [];
+    if (isDomainFa) {
+      if (year) cands.push(`${title} (فیلم ${year})`);
+      cands.push(`${title} (فیلم)`);
+      cands.push(title);
+    } else {
+      if (year) cands.push(`${title} (${year} film)`);
+      cands.push(`${title} (film)`);
+      cands.push(title);
+    }
+
+    for (const cand of cands) {
+      try {
+        const url = `https://${domain}/w/api.php?action=query&prop=extracts&explaintext=1&titles=${encodeURIComponent(cand)}&format=json&origin=*`;
+        const res = await fetch(url, { signal: AbortSignal.timeout(3500) }).then(r => r.json());
+        const page = Object.values(res.query?.pages || {})[0];
+        if (page && page.extract && page.extract.length > 50) {
+          const story = extractPureStory(page.extract, isDomainFa);
+          if (story && story.trim().length > 25) {
+            return isDomainFa ? story.trim() : await translateToPersian(story.trim());
+          }
+        }
+      } catch (e) {}
+    }
+  }
+  return '';
+}
+
 async function applyMovieDetails(data) {
   DOM.movieTitle.value = data.title || '';
   if (data.releaseYear) {
     DOM.movieReleaseYear.value = data.releaseYear;
   }
-
-  // Ensure synopsis is always in Persian
-  let syn = data.synopsis || '';
-  if (syn && !/[\u0600-\u06FF]/.test(syn)) {
-    DOM.movieSynopsis.value = 'در حال ترجمه خلاصه به فارسی...';
-    syn = await translateToPersian(syn);
-  }
-  DOM.movieSynopsis.value = syn || 'خلاصه داستانی در دست نیست.';
 
   if (data.genres && data.genres.length) {
     const genres = Array.isArray(data.genres) ? data.genres.map(translateGenreToPersian).join('، ') : data.genres;
@@ -1038,6 +1100,23 @@ async function applyMovieDetails(data) {
     DOM.moviePoster.value = data.poster;
     updatePosterPreview(data.poster);
   }
+
+  // Fetch pure movie story/plot (excluding actors, directors, production info)
+  DOM.movieSynopsis.value = 'در حال دریافت خلاصه موضوع و داستان فیلم...';
+
+  let story = '';
+  if (data.synopsis && !isActorOrProductionText(data.synopsis) && data.synopsis.length > 35) {
+    story = data.synopsis;
+    if (!/[\u0600-\u06FF]/.test(story)) {
+      story = await translateToPersian(story);
+    }
+  }
+
+  if (!story) {
+    story = await fetchPureMovieStory(data.title, data.releaseYear);
+  }
+
+  DOM.movieSynopsis.value = story || 'خلاصه موضوع و داستان این اثر ثبت نشده است.';
 }
 
 function updatePosterPreview(url) {

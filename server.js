@@ -622,7 +622,7 @@ oLink.Save
               results.push({
                 title: it.l,
                 releaseYear: it.y || 2024,
-                synopsis: it.s ? `بازیگران: ${it.s}` : 'فیلم سینمایی',
+                synopsis: '',
                 poster: it.i?.imageUrl || '',
                 genres: ['سینما']
               });
