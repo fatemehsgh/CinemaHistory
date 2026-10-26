@@ -3,9 +3,10 @@
   "short_name": "سینما لاگ",
   "description": "دفترچه خاطرات و تاریخچه فیلم‌های دیده شده با نمره و خلاصه",
   "start_url": "./",
+  "scope": "./",
   "display": "standalone",
   "background_color": "#080a10",
-  "theme_color": "#f59e0b",
+  "theme_color": "#080a10",
   "orientation": "any",
   "icons": [
     {

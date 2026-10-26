@@ -45,6 +45,12 @@
   --radius-lg: 20px;
   --radius-full: 9999px;
   
+  /* Safe Area Insets for Mobile / PWA */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  
   /* Transitions */
   --transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
@@ -63,9 +69,11 @@ body {
   line-height: 1.6;
   direction: rtl;
   min-height: 100vh;
+  min-height: 100dvh;
   position: relative;
   overflow-x: hidden;
   -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
 }
 
 /* Numbers & English font support */
@@ -114,7 +122,7 @@ body {
   z-index: 1;
   max-width: 1400px;
   margin: 0 auto;
-  padding: 24px 20px 60px;
+  padding: calc(24px + var(--safe-top)) calc(20px + var(--safe-left)) calc(60px + var(--safe-bottom)) calc(20px + var(--safe-right));
   display: flex;
   flex-direction: column;
   gap: 24px;
@@ -1834,39 +1842,6 @@ body {
   border-top: 1px solid var(--border-glass);
 }
 
-/* Responsive adjustments */
-@media (max-width: 768px) {
-  .app-container {
-    padding: 16px 12px 40px;
-  }
-  
-  .main-header {
-    padding: 14px 16px;
-  }
-  
-  .brand-title {
-    font-size: 1.25rem;
-  }
-  
-  .stats-strip {
-    grid-template-columns: repeat(2, 1fr);
-  }
-  
-  .view-hero-content {
-    flex-direction: column;
-    align-items: center;
-    text-align: center;
-  }
-  
-  .view-english-title {
-    text-align: center;
-  }
-  
-  .view-badges-row {
-    justify-content: center;
-  }
-}
-
 /* ========================================================
    GOOGLE AUTH VIEW STYLES
    ======================================================== */
@@ -2326,5 +2301,558 @@ body {
   font-weight: 600;
   padding: 3px 8px;
   border-radius: var(--radius-full);
+}
+
+/* ========================================================
+   RESPONSIVE DESIGN & MOBILE PWA OPTIMIZATIONS
+   Placed at end of file to properly override base styles
+   ======================================================== */
+
+/* Tablets & Small Desktops (max-width: 1024px) */
+@media (max-width: 1024px) {
+  .app-container {
+    max-width: 100%;
+    padding: calc(18px + var(--safe-top)) calc(16px + var(--safe-left)) calc(50px + var(--safe-bottom)) calc(16px + var(--safe-right));
+    gap: 20px;
+  }
+
+  .stats-strip {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* Tablets & Mobile Devices (max-width: 768px) */
+@media (max-width: 768px) {
+  /* Hide Desktop Shortcut Creator on Phones & Tablets */
+  #btnCreateDesktopShortcut {
+    display: none !important;
+  }
+
+  .app-container {
+    padding: calc(14px + var(--safe-top)) calc(12px + var(--safe-left)) calc(45px + var(--safe-bottom)) calc(12px + var(--safe-right));
+    gap: 16px;
+  }
+  
+  /* Header */
+  .main-header {
+    padding: 12px 14px;
+    gap: 10px;
+  }
+  
+  .header-brand {
+    gap: 10px;
+  }
+
+  .brand-icon {
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+  }
+
+  .brand-icon svg {
+    width: 22px;
+    height: 22px;
+  }
+
+  .brand-title {
+    font-size: 1.2rem;
+  }
+
+  .brand-title span {
+    font-size: 0.85rem;
+  }
+
+  .header-actions {
+    gap: 6px;
+  }
+
+  .btn {
+    padding: 8px 14px;
+    font-size: 0.88rem;
+  }
+
+  .btn.icon-only {
+    width: 36px;
+    height: 36px;
+    padding: 0;
+  }
+
+  .user-pill {
+    padding: 5px 10px;
+    gap: 6px;
+  }
+
+  .user-name {
+    max-width: 80px;
+    font-size: 0.82rem;
+  }
+
+  /* Stats Strip: Neat 2x2 grid */
+  .stats-strip {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+  }
+
+  .stat-card {
+    padding: 12px 14px;
+    gap: 10px;
+    border-radius: var(--radius-md);
+  }
+
+  .stat-icon-wrap {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+  }
+
+  .stat-icon-wrap svg {
+    width: 18px;
+    height: 18px;
+  }
+
+  .stat-value {
+    font-size: 1.45rem;
+  }
+
+  .stat-label {
+    font-size: 0.75rem;
+  }
+
+  /* Toolbar & Filter Grid */
+  .toolbar-section {
+    padding: 14px 14px;
+    gap: 12px;
+  }
+
+  .search-box input {
+    font-size: 16px;
+    padding: 11px 42px 11px 36px;
+  }
+
+  .filters-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    align-items: stretch;
+  }
+
+  .filter-group {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 4px;
+    min-width: 0;
+  }
+
+  .filter-group label {
+    font-size: 0.75rem;
+  }
+
+  .form-select {
+    width: 100%;
+    padding: 8px 10px;
+    font-size: 0.82rem;
+    height: 38px;
+  }
+
+  .view-switch {
+    grid-column: span 2;
+    margin: 4px auto 0;
+  }
+
+  /* Genre Pills: Smooth touch scroll */
+  .genre-pills {
+    padding-bottom: 4px;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .pill {
+    padding: 5px 12px;
+    font-size: 0.8rem;
+  }
+
+  /* View Modal details */
+  .view-hero-content {
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+  }
+  
+  .view-english-title {
+    text-align: center;
+  }
+  
+  .view-badges-row {
+    justify-content: center;
+  }
+}
+
+/* Mobile Devices & Phones (max-width: 640px) */
+@media (max-width: 640px) {
+  /* Prevent iOS Safari auto-zoom on input focus */
+  .form-input, 
+  .form-textarea, 
+  .form-select,
+  .search-box input {
+    font-size: 16px !important;
+  }
+
+  /* 2-Column Movie Grid - Clean native look */
+  .movies-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 10px !important;
+  }
+
+  .movie-card {
+    border-radius: var(--radius-md);
+  }
+
+  .movie-poster-box {
+    aspect-ratio: 2 / 3 !important;
+    width: 100% !important;
+    height: auto !important;
+  }
+
+  .poster-overlay {
+    padding: 8px;
+  }
+
+  .top-badges {
+    gap: 4px;
+  }
+
+  .badge {
+    padding: 2px 6px;
+    font-size: 0.65rem;
+  }
+
+  .fav-star-btn {
+    width: 28px;
+    height: 28px;
+    font-size: 0.85rem;
+  }
+
+  .card-rating-badge {
+    padding: 2px 6px;
+    font-size: 0.72rem;
+  }
+
+  .movie-card-content {
+    padding: 10px;
+    gap: 6px;
+  }
+
+  .movie-title-fa {
+    font-size: 0.92rem;
+    line-height: 1.35;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .movie-genres-row {
+    gap: 4px;
+    overflow: hidden;
+    height: 22px;
+  }
+
+  .genre-tag {
+    font-size: 0.65rem;
+    padding: 1px 6px;
+  }
+
+  .badge-watch {
+    font-size: 0.65rem;
+    padding: 1px 6px;
+  }
+
+  .movie-synopsis-preview {
+    display: none !important; /* Keeps 2-column cards clean and aligned */
+  }
+
+  .movie-card-review {
+    display: none !important;
+  }
+
+  .movie-card-actions {
+    padding: 6px 10px 10px;
+    gap: 6px;
+  }
+
+  .action-btn-small {
+    padding: 5px 8px;
+    font-size: 0.75rem;
+  }
+
+  .btn-view-card svg {
+    display: none;
+  }
+
+  /* List view on small screens */
+  .movies-grid.list-view .movie-card {
+    height: auto !important;
+    min-height: 110px !important;
+  }
+
+  .movies-grid.list-view .movie-poster-box {
+    width: 85px !important;
+    min-width: 85px !important;
+    height: 100% !important;
+  }
+
+  .movies-grid.list-view .movie-card-content {
+    padding: 8px 10px;
+  }
+
+  .movies-grid.list-view .movie-synopsis-preview {
+    display: -webkit-box !important;
+    -webkit-line-clamp: 2 !important;
+    -webkit-box-orient: vertical !important;
+    font-size: 0.78rem !important;
+  }
+
+  /* Native Mobile Bottom-Sheet Modal */
+  .modal-backdrop {
+    padding: 0 !important;
+    align-items: flex-end !important;
+    background: rgba(0, 0, 0, 0.85) !important;
+  }
+
+  .glass-modal {
+    width: 100% !important;
+    max-width: 100% !important;
+    max-height: 92dvh !important;
+    border-radius: 20px 20px 0 0 !important;
+    border-bottom: none !important;
+    border-left: none !important;
+    border-right: none !important;
+    transform: translateY(100%) !important;
+    transition: transform 0.32s cubic-bezier(0.2, 0.9, 0.3, 1) !important;
+  }
+
+  .modal-backdrop.open .glass-modal {
+    transform: translateY(0) !important;
+  }
+
+  .modal-header {
+    padding: 14px 16px !important;
+    position: sticky !important;
+    top: 0 !important;
+    background: #0d121f !important;
+    z-index: 20 !important;
+    border-bottom: 1px solid var(--border-glass) !important;
+  }
+
+  .modal-title-wrap h3 {
+    font-size: 1.1rem !important;
+  }
+
+  .modal-body {
+    padding: 14px 14px 24px !important;
+    gap: 12px !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+
+  /* Compact Release Year & Watch Year in 2 columns */
+  .form-grid {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    gap: 8px !important;
+  }
+
+  .form-group label {
+    font-size: 0.8rem !important;
+  }
+
+  .badge-auto-field {
+    font-size: 0.65rem !important;
+    padding: 1px 6px !important;
+  }
+
+  /* Media type selector on mobile */
+  .media-type-group {
+    margin-bottom: 12px !important;
+    padding: 10px 12px !important;
+  }
+
+  .media-type-radios {
+    gap: 8px !important;
+  }
+
+  .media-type-option {
+    padding: 9px 8px !important;
+    gap: 6px !important;
+  }
+
+  .media-type-option .media-type-icon {
+    font-size: 1.15rem !important;
+  }
+
+  .media-type-option .media-type-text {
+    font-size: 0.88rem !important;
+  }
+
+  /* Compact Poster on mobile */
+  .poster-showcase-group {
+    margin-top: 4px !important;
+    margin-bottom: 12px !important;
+  }
+
+  .large-poster-container {
+    width: 125px !important;
+    height: 180px !important;
+    margin: 4px auto 0 !important;
+    border-radius: 10px !important;
+  }
+
+  .poster-icon-big {
+    font-size: 1.8rem !important;
+  }
+
+  .large-poster-placeholder {
+    padding: 10px !important;
+    font-size: 0.72rem !important;
+    gap: 6px !important;
+  }
+
+  /* Genre Selector Box on mobile */
+  .genres-picker-group {
+    margin-bottom: 12px !important;
+  }
+
+  .genre-selector-container {
+    max-height: 125px !important;
+    padding: 6px !important;
+    gap: 5px !important;
+  }
+
+  .genre-choice-chip {
+    padding: 4px 10px !important;
+    font-size: 0.78rem !important;
+  }
+
+  .selected-genres-counter {
+    font-size: 0.72rem !important;
+    padding: 1px 6px !important;
+  }
+
+  /* Compact Rating Stars on mobile */
+  .compact-stars {
+    gap: 3px !important;
+  }
+
+  .rating-badge-small {
+    font-size: 0.75rem !important;
+    padding: 2px 8px !important;
+  }
+
+  /* Title inline search on mobile */
+  .btn-search-inline {
+    padding: 8px 12px !important;
+    font-size: 0.82rem !important;
+  }
+
+  .fetch-results-dropdown {
+    max-height: 220px !important;
+  }
+
+  .fetch-item {
+    padding: 8px 10px !important;
+    gap: 8px !important;
+  }
+
+  .fetch-thumb {
+    width: 36px !important;
+    height: 50px !important;
+  }
+
+  .fetch-title {
+    font-size: 0.85rem !important;
+  }
+
+  .fetch-meta {
+    font-size: 0.72rem !important;
+  }
+
+  /* Sticky Modal Footer with Full-Width Touch Buttons */
+  .modal-footer {
+    position: sticky !important;
+    bottom: 0 !important;
+    background: rgba(13, 18, 31, 0.98) !important;
+    backdrop-filter: blur(14px) !important;
+    -webkit-backdrop-filter: blur(14px) !important;
+    padding: 10px 14px calc(10px + var(--safe-bottom)) !important;
+    border-top: 1px solid var(--border-glass) !important;
+    z-index: 20 !important;
+    display: flex !important;
+    gap: 10px !important;
+    margin-top: 8px !important;
+  }
+
+  .modal-footer .btn {
+    flex: 1 !important;
+    height: 44px !important;
+    font-size: 0.92rem !important;
+  }
+
+  /* View Modal on mobile */
+  .view-modal-hero {
+    min-height: 160px !important;
+    padding: 14px !important;
+  }
+
+  .view-poster-container {
+    width: 85px !important;
+    height: 128px !important;
+  }
+
+  .view-persian-title {
+    font-size: 1.15rem !important;
+  }
+
+  .view-modal-body {
+    padding: 14px 14px calc(16px + var(--safe-bottom)) !important;
+    gap: 14px !important;
+  }
+
+  .view-rating-card {
+    padding: 12px !important;
+    gap: 10px !important;
+  }
+
+  .rating-large-score .score-number {
+    font-size: 1.8rem !important;
+  }
+
+  .rating-large-score .score-total {
+    font-size: 0.9rem !important;
+  }
+
+  .rating-desc {
+    font-size: 0.78rem !important;
+  }
+
+  .view-section-title {
+    font-size: 0.85rem !important;
+  }
+
+  .view-synopsis-text {
+    font-size: 0.85rem !important;
+    line-height: 1.6 !important;
+  }
+
+  /* Toast Notification on Mobile */
+  .toast-container {
+    bottom: calc(14px + var(--safe-bottom)) !important;
+    left: 14px !important;
+    right: 14px !important;
+    max-width: none !important;
+  }
+
+  .toast {
+    font-size: 0.85rem !important;
+    padding: 10px 14px !important;
+  }
 }
 
