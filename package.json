@@ -12,6 +12,11 @@
     "persian",
     "watchlist"
   ],
-  "author": "",
+  "homepage": "https://fatemehsgh.github.io/CinemaHistory/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fatemehsgh/CinemaHistory.git"
+  },
+  "author": "fatemehsgh",
   "license": "MIT"
 }
