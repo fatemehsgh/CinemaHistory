@@ -37,9 +37,27 @@ function readDB() {
   }
 }
 
+const CLOUD_BIN_URL = 'https://extendsclass.com/api/json-storage/bin/bdedffc';
+
+function pushToCloud(data) {
+  try {
+    const payload = JSON.stringify({
+      users: data.users || [],
+      movies: data.movies || [],
+      updatedAt: new Date().toISOString()
+    });
+    fetch(CLOUD_BIN_URL, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: payload
+    }).catch(e => console.warn('Cloud sync background error:', e.message));
+  } catch (e) {}
+}
+
 function writeDB(data) {
   try {
     fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2), 'utf8');
+    pushToCloud(data);
   } catch (err) {
     console.error('Error writing database:', err);
   }
@@ -225,6 +243,29 @@ const server = http.createServer(async (req, res) => {
         isGoogle: !!user.isGoogle
       }
     });
+  }
+
+  // 2.1 Auth: Reset Password
+  if (pathname === '/api/reset-password' && req.method === 'POST') {
+    const db = readDB();
+    const body = await parseBody(req);
+    const { username, newPassword } = body;
+    if (!username || !newPassword || newPassword.length < 4) {
+      return sendJSON(400, { error: 'نام کاربری و رمز عبور جدید معتبر (حداقل ۴ کاراکتر) الزامی است.' });
+    }
+    const cleanInput = username.trim().toLowerCase();
+    const user = db.users.find(u => 
+      (u.username && u.username.toLowerCase() === cleanInput) || 
+      (u.email && u.email.toLowerCase() === cleanInput)
+    );
+    if (!user) {
+      return sendJSON(404, { error: 'کاربری با این مشخصات یافت نشد.' });
+    }
+    const salt = crypto.randomBytes(8).toString('hex');
+    user.passwordSalt = salt;
+    user.passwordHash = hashPassword(newPassword, salt);
+    writeDB(db);
+    return sendJSON(200, { success: true, message: 'رمز عبور با موفقیت بروزرسانی شد.' });
   }
 
   // 2.45 Auth: List accounts available for quick Google / profile sign-in

@@ -468,11 +468,130 @@ async function migrateLocalMoviesToSupabase(userId) {
 // ========================================================
 // AUTH & API (WITH LOCALSTORAGE STATIC HOST FALLBACK)
 // ========================================================
+// ========================================================
+// AUTH & API (ZERO-CONFIG CLOUD DATABASE & OFFLINE ENGINE)
+// ========================================================
+const CLOUD_DATABASE_URL = 'https://extendsclass.com/api/json-storage/bin/bdedffc';
+
 const IS_STATIC_HOST = window.location.hostname.includes('github.io') || 
                        window.location.protocol === 'file:' || 
                        window.location.hostname === '';
 
-function localApiFallback(endpoint, method = 'GET', body = null) {
+async function sha256Hex(str) {
+  try {
+    const enc = new TextEncoder();
+    const buf = await crypto.subtle.digest('SHA-256', enc.encode(str));
+    return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+  } catch (e) {
+    return '';
+  }
+}
+
+async function syncCloudDatabase() {
+  try {
+    const res = await fetch(`${CLOUD_DATABASE_URL}?v=${Date.now()}`, {
+      headers: { 'Cache-Control': 'no-cache' }
+    });
+    if (res.ok) {
+      const cloudDb = await res.json();
+      let usersChanged = false;
+      let moviesChanged = false;
+
+      // 1. Sync users
+      const localUsers = JSON.parse(localStorage.getItem('cinelog_users') || '[]');
+      const userMap = new Map();
+      localUsers.forEach(u => {
+        if (u.username) userMap.set(u.username.toLowerCase(), u);
+      });
+      if (Array.isArray(cloudDb.users)) {
+        cloudDb.users.forEach(u => {
+          if (u.username && !userMap.has(u.username.toLowerCase())) {
+            userMap.set(u.username.toLowerCase(), u);
+            usersChanged = true;
+          }
+        });
+      }
+      const mergedUsers = Array.from(userMap.values());
+      localStorage.setItem('cinelog_users', JSON.stringify(mergedUsers));
+
+      // 2. Sync movies
+      const localMovies = JSON.parse(localStorage.getItem('cinelog_movies') || '[]');
+      const movieMap = new Map();
+      localMovies.forEach(m => {
+        if (m.id) movieMap.set(m.id, m);
+      });
+      if (Array.isArray(cloudDb.movies)) {
+        cloudDb.movies.forEach(m => {
+          if (m.id && !movieMap.has(m.id)) {
+            movieMap.set(m.id, m);
+            moviesChanged = true;
+          }
+        });
+      }
+      const mergedMovies = Array.from(movieMap.values());
+      localStorage.setItem('cinelog_movies', JSON.stringify(mergedMovies));
+      localStorage.setItem('cinelog_local_movies', JSON.stringify(mergedMovies));
+
+      // 3. If local storage had items not present in cloud, push union to cloud
+      if (mergedUsers.length > (cloudDb.users?.length || 0) || mergedMovies.length > (cloudDb.movies?.length || 0)) {
+        pushToCloudDatabase({ users: mergedUsers, movies: mergedMovies });
+      }
+
+      return { users: mergedUsers, movies: mergedMovies };
+    }
+  } catch (err) {
+    console.warn('Cloud sync error, falling back to local database:', err);
+  }
+
+  // Fallback to local data/database.json if cloud is unreachable
+  try {
+    const res = await fetch('data/database.json?v=' + Date.now());
+    if (res.ok) {
+      const repoDb = await res.json();
+      const localUsers = JSON.parse(localStorage.getItem('cinelog_users') || '[]');
+      const userMap = new Map(localUsers.map(u => [u.username?.toLowerCase(), u]));
+      if (Array.isArray(repoDb.users)) {
+        repoDb.users.forEach(u => {
+          if (u.username && !userMap.has(u.username.toLowerCase())) {
+            userMap.set(u.username.toLowerCase(), u);
+          }
+        });
+        localStorage.setItem('cinelog_users', JSON.stringify(Array.from(userMap.values())));
+      }
+      if (Array.isArray(repoDb.movies) && repoDb.movies.length > 0) {
+        const localMovies = JSON.parse(localStorage.getItem('cinelog_movies') || '[]');
+        if (localMovies.length === 0) {
+          localStorage.setItem('cinelog_movies', JSON.stringify(repoDb.movies));
+          localStorage.setItem('cinelog_local_movies', JSON.stringify(repoDb.movies));
+        }
+      }
+    }
+  } catch (e) {}
+
+  return {
+    users: JSON.parse(localStorage.getItem('cinelog_users') || '[]'),
+    movies: JSON.parse(localStorage.getItem('cinelog_movies') || '[]')
+  };
+}
+
+async function pushToCloudDatabase(dbData) {
+  try {
+    const fullDb = {
+      users: dbData?.users || JSON.parse(localStorage.getItem('cinelog_users') || '[]'),
+      movies: dbData?.movies || JSON.parse(localStorage.getItem('cinelog_movies') || '[]'),
+      updatedAt: new Date().toISOString()
+    };
+    await fetch(CLOUD_DATABASE_URL, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(fullDb)
+    });
+  } catch (e) {
+    console.warn('Background cloud database push warning:', e);
+  }
+}
+
+async function localApiFallback(endpoint, method = 'GET', body = null) {
   const cleanEndpoint = endpoint.split('?')[0];
 
   // GET /api/me
@@ -483,16 +602,7 @@ function localApiFallback(endpoint, method = 'GET', body = null) {
         return { user: JSON.parse(userStr) };
       } catch (e) {}
     }
-    const defaultUser = {
-      id: 'usr-guest',
-      name: 'کاربر سینما',
-      username: 'cinema_lover',
-      avatar: '🎬',
-      bio: 'دفترچه خاطرات سینمایی من'
-    };
-    localStorage.setItem('cinelog_user', JSON.stringify(defaultUser));
-    localStorage.setItem('cinelog_token', 'local-token-guest');
-    return { user: defaultUser };
+    return { user: null };
   }
 
   // POST /api/login
@@ -504,6 +614,10 @@ function localApiFallback(endpoint, method = 'GET', body = null) {
     if (!password || !password.trim()) {
       throw new Error('لطفاً رمز عبور خود را وارد کنید.');
     }
+
+    // Refresh users from cloud
+    await syncCloudDatabase();
+
     const cleanUser = username.trim().toLowerCase();
     const users = JSON.parse(localStorage.getItem('cinelog_users') || '[]');
     let user = users.find(u => 
@@ -515,14 +629,46 @@ function localApiFallback(endpoint, method = 'GET', body = null) {
       throw new Error('کاربری با این مشخصات یافت نشد. لطفاً ابتدا از تب ثبت‌نام حساب بسازید.');
     }
 
-    if (user.password && user.password !== password) {
+    let isMatch = false;
+    if (user.passwordHash && user.passwordSalt) {
+      const calculatedHash = await sha256Hex(password + user.passwordSalt);
+      if (calculatedHash === user.passwordHash) {
+        isMatch = true;
+      }
+    } else if (user.password && user.password === password) {
+      isMatch = true;
+    }
+
+    if (!isMatch) {
       throw new Error('رمز عبور وارد شده نادرست است.');
     }
 
-    const token = 'local-token-' + Date.now();
+    const token = 'token-' + Date.now();
     localStorage.setItem('cinelog_token', token);
     localStorage.setItem('cinelog_user', JSON.stringify(user));
     return { token, user };
+  }
+
+  // POST /api/reset-password
+  if (cleanEndpoint === '/api/reset-password' && method === 'POST') {
+    const { username, newPassword } = body || {};
+    await syncCloudDatabase();
+    const cleanUser = (username || '').trim().toLowerCase();
+    const users = JSON.parse(localStorage.getItem('cinelog_users') || '[]');
+    const idx = users.findIndex(u => 
+      (u.username && u.username.toLowerCase() === cleanUser) ||
+      (u.email && u.email.toLowerCase() === cleanUser)
+    );
+    if (idx === -1) {
+      throw new Error('کاربر یافت نشد.');
+    }
+    const salt = Math.random().toString(36).substring(2, 10);
+    users[idx].passwordSalt = salt;
+    users[idx].passwordHash = await sha256Hex(newPassword + salt);
+    delete users[idx].password;
+    localStorage.setItem('cinelog_users', JSON.stringify(users));
+    pushToCloudDatabase({ users });
+    return { success: true };
   }
 
   // POST /api/register
@@ -534,23 +680,33 @@ function localApiFallback(endpoint, method = 'GET', body = null) {
     if (!password || password.length < 4) {
       throw new Error('رمز عبور باید حداقل ۴ کاراکتر باشد.');
     }
+
+    await syncCloudDatabase();
+
     const cleanUser = username.trim().toLowerCase();
     const users = JSON.parse(localStorage.getItem('cinelog_users') || '[]');
     if (users.some(u => u.username?.toLowerCase() === cleanUser)) {
-      throw new Error('این نام کاربری قبلاً ثبت شده است. لطفاً نام دیگری انتخاب کنید.');
+      throw new Error('این نام کاربری قبلاً ثبت شده است. لطفاً وارد شوید یا نام دیگری انتخاب کنید.');
     }
+
+    const salt = Math.random().toString(36).substring(2, 10);
+    const passwordHash = await sha256Hex(password + salt);
     const user = {
-      id: 'usr-' + Date.now(),
+      id: 'usr-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
       name: name || username,
       username: username.trim(),
-      email: (email || '').trim(),
-      password: password,
+      email: (email || '').trim().toLowerCase(),
+      passwordHash: passwordHash,
+      passwordSalt: salt,
       avatar: avatar || '🎬',
-      bio: 'دفترچه خاطرات سینمایی من'
+      bio: 'دفترچه خاطرات سینمایی من',
+      createdAt: new Date().toISOString()
     };
     users.push(user);
     localStorage.setItem('cinelog_users', JSON.stringify(users));
-    const token = 'local-token-' + Date.now();
+    pushToCloudDatabase({ users });
+
+    const token = 'token-' + Date.now();
     localStorage.setItem('cinelog_token', token);
     localStorage.setItem('cinelog_user', JSON.stringify(user));
     return { token, user };
@@ -565,6 +721,17 @@ function localApiFallback(endpoint, method = 'GET', body = null) {
 
   // GET /api/movies
   if (cleanEndpoint === '/api/movies' && method === 'GET') {
+    try {
+      const res = await fetch(`${CLOUD_DATABASE_URL}?v=${Date.now()}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.movies)) {
+          localStorage.setItem('cinelog_movies', JSON.stringify(data.movies));
+          localStorage.setItem('cinelog_local_movies', JSON.stringify(data.movies));
+          return { movies: data.movies };
+        }
+      }
+    } catch (e) {}
     let movies = JSON.parse(localStorage.getItem('cinelog_movies') || '[]');
     return { movies };
   }
@@ -573,12 +740,15 @@ function localApiFallback(endpoint, method = 'GET', body = null) {
   if (cleanEndpoint === '/api/movies' && method === 'POST') {
     const movies = JSON.parse(localStorage.getItem('cinelog_movies') || '[]');
     const newMovie = {
-      id: 'mov-' + Date.now(),
+      id: 'mov-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
+      userId: STATE.user?.id || 'usr-1',
       ...body,
       createdAt: new Date().toISOString()
     };
     movies.unshift(newMovie);
     localStorage.setItem('cinelog_movies', JSON.stringify(movies));
+    localStorage.setItem('cinelog_local_movies', JSON.stringify(movies));
+    pushToCloudDatabase({ movies });
     return { success: true, movie: newMovie };
   }
 
@@ -588,8 +758,10 @@ function localApiFallback(endpoint, method = 'GET', body = null) {
     const movies = JSON.parse(localStorage.getItem('cinelog_movies') || '[]');
     const idx = movies.findIndex(m => m.id === id);
     if (idx !== -1) {
-      movies[idx] = { ...movies[idx], ...body };
+      movies[idx] = { ...movies[idx], ...body, updatedAt: new Date().toISOString() };
       localStorage.setItem('cinelog_movies', JSON.stringify(movies));
+      localStorage.setItem('cinelog_local_movies', JSON.stringify(movies));
+      pushToCloudDatabase({ movies });
       return { success: true, movie: movies[idx] };
     }
     return { success: true };
@@ -601,6 +773,8 @@ function localApiFallback(endpoint, method = 'GET', body = null) {
     let movies = JSON.parse(localStorage.getItem('cinelog_movies') || '[]');
     movies = movies.filter(m => m.id !== id);
     localStorage.setItem('cinelog_movies', JSON.stringify(movies));
+    localStorage.setItem('cinelog_local_movies', JSON.stringify(movies));
+    pushToCloudDatabase({ movies });
     return { success: true };
   }
 
@@ -608,6 +782,7 @@ function localApiFallback(endpoint, method = 'GET', body = null) {
   if (cleanEndpoint === '/api/movies' && method === 'DELETE') {
     localStorage.setItem('cinelog_movies', JSON.stringify([]));
     localStorage.setItem('cinelog_local_movies', JSON.stringify([]));
+    pushToCloudDatabase({ movies: [] });
     return { success: true };
   }
 
@@ -630,7 +805,7 @@ function localApiFallback(endpoint, method = 'GET', body = null) {
       avatar: '🌟',
       bio: 'ورود از طریق حساب گوگل'
     };
-    const token = 'local-google-token-' + Date.now();
+    const token = 'token-google-' + Date.now();
     localStorage.setItem('cinelog_token', token);
     localStorage.setItem('cinelog_user', JSON.stringify(user));
     return { token, user };
@@ -646,7 +821,7 @@ function localApiFallback(endpoint, method = 'GET', body = null) {
 
 async function apiCall(endpoint, method = 'GET', body = null) {
   if (IS_STATIC_HOST) {
-    return localApiFallback(endpoint, method, body);
+    return await localApiFallback(endpoint, method, body);
   }
 
   const headers = { 'Content-Type': 'application/json' };
@@ -662,84 +837,34 @@ async function apiCall(endpoint, method = 'GET', body = null) {
     });
     const contentType = res.headers.get('content-type') || '';
     if (!res.ok || !contentType.includes('application/json')) {
-      return localApiFallback(endpoint, method, body);
+      return await localApiFallback(endpoint, method, body);
     }
     const data = await res.json();
     return data;
   } catch (err) {
-    return localApiFallback(endpoint, method, body);
+    return await localApiFallback(endpoint, method, body);
   }
 }
 
 async function initAuth() {
-  await fetchServerCloudConfig();
-  const isCloudReady = initSupabase();
-  updateCloudStatusUI();
+  await syncCloudDatabase();
 
-  if (isCloudReady && supabaseClient) {
+  const storedToken = localStorage.getItem('cinelog_token');
+  const storedUserStr = localStorage.getItem('cinelog_user');
+
+  if (storedToken && storedUserStr) {
     try {
-      const { data: { session } } = await supabaseClient.auth.getSession();
-      if (session?.user) {
-        let profile = null;
-        try {
-          const { data } = await supabaseClient
-            .from('profiles')
-            .select('*')
-            .eq('id', session.user.id)
-            .maybeSingle();
-          profile = data;
-        } catch (e) {}
-
-        STATE.user = {
-          id: session.user.id,
-          name: profile?.name || session.user.user_metadata?.name || 'کاربر سینما',
-          username: profile?.username || session.user.user_metadata?.username || (session.user.email ? session.user.email.split('@')[0] : 'cinema'),
-          email: session.user.email,
-          avatar: profile?.avatar || session.user.user_metadata?.avatar || '🎬',
-          bio: profile?.bio || 'دفترچه خاطرات سینمایی من'
-        };
-        updateUserUI();
-        await migrateLocalMoviesToSupabase(STATE.user.id);
-        await loadMovies();
-        return;
-      } else {
-        // Supabase is connected but user is not logged in yet
-        STATE.token = '';
-        STATE.user = null;
-        updateUserUI();
-        await loadMovies();
-        return;
-      }
-    } catch (err) {
-      console.warn('Supabase session restore check failed:', err);
-    }
-  }
-
-  const storedLocalUser = JSON.parse(localStorage.getItem('cinelog_local_user') || 'null');
-  if (storedLocalUser && (storedLocalUser.username === 'cinema' || storedLocalUser.id === 'local-1')) {
-    localStorage.removeItem('cinelog_local_user');
-  }
-
-  if (STATE.token) {
-    try {
-      const data = await apiCall('/api/me');
-      STATE.user = data.user;
+      STATE.token = storedToken;
+      STATE.user = JSON.parse(storedUserStr);
       updateUserUI();
       await loadMovies();
       return;
     } catch (err) {
       STATE.token = '';
+      STATE.user = null;
       localStorage.removeItem('cinelog_token');
+      localStorage.removeItem('cinelog_user');
     }
-  }
-
-  if (IS_STATIC_HOST) {
-    const res = localApiFallback('/api/me', 'GET');
-    STATE.user = res.user;
-    STATE.token = localStorage.getItem('cinelog_token') || 'local-token-guest';
-    updateUserUI();
-    await loadMovies();
-    return;
   }
 
   STATE.token = '';
@@ -2078,12 +2203,44 @@ function setupAuthModal() {
       STATE.token = data.token;
       STATE.user = data.user;
       localStorage.setItem('cinelog_token', data.token);
+      localStorage.setItem('cinelog_user', JSON.stringify(data.user));
+      const existingResetBtn = document.getElementById('btnQuickResetPass');
+      if (existingResetBtn) existingResetBtn.remove();
       updateUserUI();
       DOM.authModal.classList.remove('open');
-      showToast(`خوش آمدید، ${STATE.user.name}! 🎬`, 'success');
+      showToast(`خوش آمدید، ${STATE.user.name || STATE.user.username}! 🎬`, 'success');
       await loadMovies();
     } catch (err) {
       showToast(err.message || 'نام کاربری یا رمز عبور اشتباه است.', 'error');
+      if (err.message && err.message.includes('رمز عبور')) {
+        let resetBtn = document.getElementById('btnQuickResetPass');
+        if (!resetBtn) {
+          resetBtn = document.createElement('button');
+          resetBtn.id = 'btnQuickResetPass';
+          resetBtn.type = 'button';
+          resetBtn.className = 'btn btn-secondary full-width';
+          resetBtn.style.marginTop = '12px';
+          resetBtn.textContent = '🔑 ذخیره این رمز عبور به عنوان رمز جدید حساب من';
+          resetBtn.onclick = async () => {
+            try {
+              await apiCall('/api/reset-password', 'POST', { username, newPassword: password });
+              showToast('رمز عبور جدید با موفقیت ذخیره شد! در حال ورود...', 'success');
+              const res = await apiCall('/api/login', 'POST', { username, password });
+              STATE.token = res.token;
+              STATE.user = res.user;
+              localStorage.setItem('cinelog_token', res.token);
+              localStorage.setItem('cinelog_user', JSON.stringify(res.user));
+              resetBtn.remove();
+              updateUserUI();
+              DOM.authModal.classList.remove('open');
+              await loadMovies();
+            } catch (e2) {
+              showToast(e2.message || 'خطا در ثبت رمز عبور جدید.', 'error');
+            }
+          };
+          DOM.loginForm.appendChild(resetBtn);
+        }
+      }
     }
   });
 

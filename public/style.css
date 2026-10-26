@@ -1845,6 +1845,84 @@ body {
   display: inline-block;
 }
 
+/* Instant Phone Sync Card */
+.instant-sync-card {
+  margin-top: 14px;
+  padding: 16px;
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.08), rgba(139, 92, 246, 0.08));
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  border-radius: var(--radius-md);
+  text-align: center;
+}
+
+.instant-sync-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-align: right;
+  margin-bottom: 12px;
+}
+
+.instant-sync-icon {
+  font-size: 1.8rem;
+  background: rgba(245, 158, 11, 0.15);
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.instant-sync-title-wrap h4 {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--gold-400);
+}
+
+.instant-sync-title-wrap p {
+  font-size: 0.76rem;
+  color: var(--text-muted);
+  margin-top: 2px;
+  line-height: 1.4;
+}
+
+.instant-sync-qr-wrapper {
+  display: inline-flex;
+  padding: 10px;
+  background: #ffffff;
+  border-radius: 14px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
+  margin: 4px auto 12px;
+}
+
+.instant-sync-qr-wrapper img {
+  width: 190px;
+  height: 190px;
+  display: block;
+  border-radius: 6px;
+}
+
+.scan-hint-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  margin-bottom: 16px;
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px dashed rgba(245, 158, 11, 0.4);
+  border-radius: var(--radius-md);
+  font-size: 0.8rem;
+  color: var(--gold-400);
+  line-height: 1.5;
+}
+
+.scan-hint-banner span {
+  font-size: 1.3rem;
+  flex-shrink: 0;
+}
+
 /* Cloud QR Code & Local Network */
 .cloud-qr-box {
   margin-top: 16px;

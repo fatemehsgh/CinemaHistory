@@ -526,6 +526,23 @@
             </div>
           </div>
 
+          <!-- Instant Phone Sync Card (Zero Setup) -->
+          <div class="instant-sync-card glass-card" id="instantPhoneSyncBox">
+            <div class="instant-sync-header">
+              <span class="instant-sync-icon">📱</span>
+              <div class="instant-sync-title-wrap">
+                <h4>اتصال آنی گوشی به این اکانت</h4>
+                <p>دوربین گوشی را مقابل تصویر بگیرید تا فوراً در گوشی به این حساب و تمام فیلم‌ها وصل شوید</p>
+              </div>
+            </div>
+            <div class="instant-sync-qr-wrapper">
+              <img id="instantSyncQrImg" src="" alt="QR Code اتصال فوری گوشی" loading="lazy">
+            </div>
+            <button type="button" id="btnCopyInstantSyncLink" class="btn btn-secondary full-width">
+              <span>📋 کپی لینک مستقیم اتصال (برای ارسال در ایتا / بله / تلگرام)</span>
+            </button>
+          </div>
+
           <div class="account-actions-list">
             <button id="btnSwitchAccount" class="btn btn-secondary full-width">ورود به حساب دیگر / تعویض اکانت</button>
             <button id="btnLogout" class="btn btn-danger full-width">خروج از حساب</button>
@@ -534,6 +551,11 @@
 
         <!-- Auth Form View -->
         <div id="authFormView">
+          <div class="scan-hint-banner glass-card">
+            <span>📷</span>
+            <p>اگر در کامپیوتر وارد شده‌اید، در مانیتور روی نام کاربر زده و بارکد «اتصال آنی گوشی» را با دوربین گوشی اسکن کنید تا فوراً وارد شوید!</p>
+          </div>
+
           <div class="auth-tabs">
             <button class="auth-tab active" id="tabLogin">ورود به حساب</button>
             <button class="auth-tab" id="tabRegister">ثبت‌نام اکانت جدید</button>
@@ -594,75 +616,20 @@
           </form>
         </div>
 
-        <!-- Cloud Sync (Supabase) Card -->
+        <!-- Cloud Sync (Automatic Zero-Config) Card -->
         <div class="cloud-sync-card glass-card">
-          <div class="cloud-sync-header" id="btnToggleCloudSync">
+          <div class="cloud-sync-header" style="cursor: default;">
             <div class="cloud-sync-title">
               <span class="cloud-sync-icon">☁️</span>
               <div>
-                <h4>همگام‌سازی ابری (اتصال گوشی و کامپیوتر)</h4>
-                <p id="cloudSyncStatusText" class="cloud-status-text">وضعیت: آفلاین (حافظه محلی)</p>
+                <h4>همگام‌سازی ابری سراسری (گوشی و کامپیوتر)</h4>
+                <p id="cloudSyncStatusText" class="cloud-status-text connected">🟢 متصل به دیتابیس ابری - فعال در تمام دستگاه‌ها</p>
               </div>
-            </div>
-            <span class="cloud-sync-arrow" id="cloudSyncArrow">▾</span>
-          </div>
-
-          <div class="cloud-sync-body" id="cloudSyncBody" style="display: none;">
-            <p class="cloud-sync-desc">
-              با اتصال به دیتابیس ابری Supabase، اکانت و تمام فیلم‌های شما روی سرور ابری قرار می‌گیرد و با باز کردن این سایت در هر گوشی یا کامپیوتری، بلافاصله به اکانت خود وصل می‌شوید.
-            </p>
-
-            <div class="form-group">
-              <label for="supabaseUrlInput">آدرس پروژه Supabase (Project URL)</label>
-              <input type="text" id="supabaseUrlInput" class="form-input ltr-input" placeholder="https://xyzcompany.supabase.co">
-            </div>
-
-            <div class="form-group">
-              <label for="supabaseKeyInput">کلید عمومی (anon public key)</label>
-              <input type="password" id="supabaseKeyInput" class="form-input ltr-input" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...">
-            </div>
-
-            <div class="cloud-sync-actions">
-              <button type="button" id="btnSaveCloudSync" class="btn btn-primary full-width">
-                <span>ذخیره و اتصال به دیتابیس ابری</span>
-              </button>
-              <button type="button" id="btnShareCloudSync" class="btn btn-secondary full-width" style="display: none;">
-                <span>🔗 کپی لینک سریع اتصال برای گوشی</span>
-              </button>
-              <button type="button" id="btnDisconnectCloudSync" class="btn btn-danger full-width" style="display: none;">
-                <span>قطع اتصال ابری و بازگشت به حالت محلی</span>
-              </button>
-            </div>
-
-            <!-- QR Code for 1-Click Mobile Cloud Connection -->
-            <div class="cloud-qr-box" id="cloudQrBox" style="display: none;">
-              <p class="qr-box-title">📱 اسکن با دوربین گوشی برای اتصال آنی:</p>
-              <div class="qr-image-wrapper">
-                <img id="cloudQrImg" src="" alt="QR Code همگام‌سازی ابری" loading="lazy">
-              </div>
-              <p class="qr-box-subtitle">دوربین گوشی را مقابل این بارکد بگیرید تا سایت باز شده و تمام اکانت‌ها و فیلم‌ها خودکار همگام شوند.</p>
-            </div>
-
-            <!-- Local Wi-Fi Network Connection (No internet required when server is running) -->
-            <div class="local-network-box" id="localNetworkBox" style="display: none;">
-              <div class="local-network-header">
-                <span>📶</span>
-                <h4>اتصال در شبکه وای‌فای خانگی (شبکه محلی)</h4>
-              </div>
-              <p class="local-network-desc">گوشی شما و کامپیوتر وقتی به یک مودم/وای‌فای وصل باشند، این آدرس را در مرورگر گوشی باز کنید:</p>
-              <div class="network-url-pill">
-                <code id="localNetworkUrl">http://...:3000</code>
-                <button type="button" class="btn btn-secondary icon-only" id="btnCopyNetworkUrl" title="کپی آدرس">📋</button>
-              </div>
-              <div class="qr-image-wrapper" id="localQrWrapper" style="display: none; margin-top: 8px;">
-                <img id="localNetworkQrImg" src="" alt="QR Code شبکه محلی" loading="lazy">
-              </div>
-            </div>
-
-            <div class="cloud-help-box">
-              <p>💡 <strong>راهنما:</strong> در <a href="https://supabase.com" target="_blank" rel="noopener">supabase.com</a> یک پروژه رایگان بسازید، کدهای فایل <code>supabase-setup.sql</code> را در منوی SQL Editor اجرا کنید، سپس Project URL و Anon Key را در بالا وارد نمایید.</p>
             </div>
           </div>
+          <p class="cloud-sync-desc" style="margin-top: 10px; font-size: 0.85rem; color: var(--text-secondary); line-height: 1.6;">
+            اطلاعات کاربری و تمام فیلم‌های ثبت‌شده شما به صورت خودکار در فضای ابری نگهداری می‌شوند. با وارد کردن همین نام کاربری و رمز عبور در هر گوشی، لپ‌تاپ یا مرورگر دیگری، بلافاصله به تمام اطلاعات و فیلم‌های خود دسترسی خواهید داشت.
+          </p>
         </div>
       </div>
     </div>
