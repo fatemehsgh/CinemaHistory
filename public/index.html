@@ -285,11 +285,28 @@
         <form id="movieForm">
           <input type="hidden" id="editMovieId">
 
-          <!-- 1. Movie Title with LIVE Internet Auto-Fetch -->
+          <!-- 1. Media Type (فیلم یا سریال) - بالای فرم -->
+          <div class="form-group media-type-group">
+            <label class="media-type-label">نوع اثر: <span class="required">*</span></label>
+            <div class="media-type-radios" id="mediaTypeRadios">
+              <label class="media-type-option active" id="labelTypeMovie">
+                <input type="radio" name="mediaType" value="movie" id="radioTypeMovie" checked>
+                <span class="media-type-icon">🎬</span>
+                <span class="media-type-text">فیلم</span>
+              </label>
+              <label class="media-type-option" id="labelTypeSeries">
+                <input type="radio" name="mediaType" value="series" id="radioTypeSeries">
+                <span class="media-type-icon">📺</span>
+                <span class="media-type-text">سریال</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- 2. Movie/Series Title with LIVE Internet Auto-Fetch -->
           <div class="form-group" style="position: relative;">
-            <label for="movieTitle">نام فیلم <span class="required">*</span></label>
+            <label for="movieTitle" id="movieTitleLabel">نام فیلم <span class="required">*</span></label>
             <div class="title-search-wrapper">
-              <input type="text" id="movieTitle" class="form-input" placeholder="نام فیلم را بنویسید (مثلاً: Inception، مارمولک، Dune...)" required autocomplete="off">
+              <input type="text" id="movieTitle" class="form-input" placeholder="نام اثر را بنویسید (مثلاً: Inception، زخم کاری، مارمولک...)" required autocomplete="off">
               <button type="button" id="btnSearchOnline" class="btn btn-accent btn-search-inline" title="جستجو در اینترنت">
                 <span id="searchBtnText">جستجو</span>
                 <span id="searchBtnSpinner" class="spinner" style="display: none;"></span>
@@ -300,42 +317,48 @@
             <div id="fetchResultsDropdown" class="fetch-results-dropdown" style="display: none;"></div>
           </div>
 
-          <!-- 2. Release Year & Watch Year -->
+          <!-- 3. Release Year & Watch Year -->
           <div class="form-grid">
             <!-- Release Year -->
             <div class="form-group">
               <div class="field-label-row">
-                <label for="movieReleaseYear">سال ساخت فیلم <span class="required">*</span></label>
-                <span class="badge-auto-field" title="با انتخاب یا جستجوی فیلم خودکار پر می‌شود">درج خودکار (قابل ویرایش)</span>
+                <label for="movieReleaseYear" id="movieReleaseYearLabel">سال ساخت فیلم <span class="required">*</span></label>
+                <span class="badge-auto-field" title="با انتخاب یا جستجوی اثر خودکار پر می‌شود">درج خودکار (قابل ویرایش)</span>
               </div>
               <input type="number" id="movieReleaseYear" class="form-input ltr-input" placeholder="امسال (مثلاً: 2026)" min="1300" max="2035" required>
             </div>
 
-            <!-- Watch Year (سالی که دیدم) - Default to this year without side buttons -->
+            <!-- Watch Year (سالی که دیدم) -->
             <div class="form-group">
               <label for="movieWatchYear">سالی که دیدم <span class="required">*</span></label>
               <input type="number" id="movieWatchYear" class="form-input" placeholder="امسال (مثلاً: 1405)" min="1350" max="1450" required>
             </div>
           </div>
 
-          <!-- 3. Media Type (فیلم یا سریال) -->
-          <div class="form-group media-type-group">
-            <label class="media-type-label">نوع اثر: <span class="required">*</span></label>
-            <div class="media-type-radios" id="mediaTypeRadios">
-              <label class="media-type-option active" id="labelTypeMovie">
-                <input type="radio" name="mediaType" value="movie" id="radioTypeMovie" checked>
-                <span class="media-type-icon">🎬</span>
-                <span class="media-type-text">فیلم سینمایی</span>
-              </label>
-              <label class="media-type-option" id="labelTypeSeries">
-                <input type="radio" name="mediaType" value="series" id="radioTypeSeries">
-                <span class="media-type-icon">📺</span>
-                <span class="media-type-text">سریال تلویزیونی</span>
-              </label>
+          <!-- 4. Large Poster Showcase (پوستر اثر بعد از سال‌ها) -->
+          <div class="form-group poster-showcase-group">
+            <div class="field-label-row">
+              <label id="posterLabel">پوستر فیلم <span class="badge-auto-field">بارگذاری خودکار</span></label>
+            </div>
+            <!-- Hidden input stores the poster URL for saving without cluttering the UI -->
+            <input type="hidden" id="moviePoster">
+            
+            <div class="large-poster-container" id="posterThumbPreview">
+              <img id="posterPreviewImg" src="" alt="پوستر اثر" style="display: none;">
+              <div id="posterPlaceholderText" class="large-poster-placeholder">
+                <span class="poster-icon-big" id="posterIconBig">🎬</span>
+                <span id="posterPlaceholderSpan">پوستر با انتخاب یا جستجوی اثر به‌صورت خودکار در این قاب نمایش داده می‌شود</span>
+              </div>
             </div>
           </div>
 
-          <!-- 4. Selectable Genres (انتخاب ژانرها) -->
+          <!-- 5. Synopsis (خلاصه داستان اثر) -->
+          <div class="form-group">
+            <label for="movieSynopsis" id="movieSynopsisLabel">خلاصه داستان فیلم <span class="required">*</span></label>
+            <textarea id="movieSynopsis" class="form-textarea" rows="3" placeholder="خلاصه داستان به صورت خودکار از اینترنت بارگذاری می‌شود..." required></textarea>
+          </div>
+
+          <!-- 6. Selectable Genres (باکس ژانرها بعد از خلاصه) -->
           <div class="form-group genres-picker-group">
             <div class="field-label-row">
               <label>ژانرها (برای انتخاب یا حذف کلیک کنید): <span class="required">*</span></label>
@@ -347,7 +370,7 @@
             <input type="hidden" id="movieGenres" value="">
           </div>
 
-          <!-- 4. Compact Rating ONLY with 1 to 10 Clickable Stars -->
+          <!-- 7. Compact Rating ONLY with 1 to 10 Clickable Stars -->
           <div class="form-group rating-form-group compact-rating">
             <div class="rating-header-row">
               <label>نمره شما (۱ تا ۱۰ ستاره): <span class="required">*</span></label>
@@ -356,41 +379,18 @@
             <div class="rating-interactive-stars compact-stars" id="starRatingContainer"></div>
           </div>
 
-          <!-- 5. Synopsis (Auto-filled from net) -->
+          <!-- 8. Review & Notes -->
           <div class="form-group">
-            <label for="movieSynopsis">خلاصه داستان فیلم <span class="required">*</span></label>
-            <textarea id="movieSynopsis" class="form-textarea" rows="3" placeholder="خلاصه داستان به صورت خودکار از اینترنت بارگذاری می‌شود..." required></textarea>
+            <label for="movieReview">یادداشت، نقد یا نظر شخصی من درباره اثر:</label>
+            <textarea id="movieReview" class="form-textarea" rows="2" placeholder="دیالوگ مورد علاقه، نظر شخصی و حسم به این اثر..."></textarea>
           </div>
 
-          <!-- 6. Large Movie Poster Showcase (Auto-filled from net, no link input needed) -->
-          <div class="form-group poster-showcase-group">
-            <div class="field-label-row">
-              <label>پوستر فیلم <span class="badge-auto-field">بارگذاری خودکار</span></label>
-            </div>
-            <!-- Hidden input stores the poster URL for saving without cluttering the UI -->
-            <input type="hidden" id="moviePoster">
-            
-            <div class="large-poster-container" id="posterThumbPreview">
-              <img id="posterPreviewImg" src="" alt="پوستر فیلم" style="display: none;">
-              <div id="posterPlaceholderText" class="large-poster-placeholder">
-                <span class="poster-icon-big">🎬</span>
-                <span>پوستر فیلم با انتخاب یا جستجو خودکار در این قاب نمایش داده می‌شود</span>
-              </div>
-            </div>
-          </div>
-
-          <!-- 7. Review & Notes -->
-          <div class="form-group">
-            <label for="movieReview">یادداشت، نقد یا نظر شخصی من درباره فیلم:</label>
-            <textarea id="movieReview" class="form-textarea" rows="2" placeholder="دیالوگ مورد علاقه، نظر شخصی و حسم به فیلم..."></textarea>
-          </div>
-
-          <!-- 8. Favorite Checkbox -->
+          <!-- 9. Favorite Checkbox -->
           <div class="form-group checkbox-group">
             <label class="custom-checkbox">
               <input type="checkbox" id="movieIsFavorite">
               <span class="checkmark"></span>
-              <span class="checkbox-label">❤️ افزودن به فیلم‌های محبوب و برگزیده من</span>
+              <span class="checkbox-label" id="favCheckboxLabel">❤️ افزودن به فیلم‌های محبوب و برگزیده من</span>
             </label>
           </div>
 

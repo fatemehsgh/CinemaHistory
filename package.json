@@ -6,7 +6,12 @@
   "scripts": {
     "start": "node server.js"
   },
-  "keywords": ["cinema", "movie-tracker", "persian", "watchlist"],
+  "keywords": [
+    "cinema",
+    "movie-tracker",
+    "persian",
+    "watchlist"
+  ],
   "author": "",
   "license": "MIT"
 }

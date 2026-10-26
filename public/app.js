@@ -1159,6 +1159,30 @@ function setMediaType(type) {
   if (DOM.radioTypeSeries) DOM.radioTypeSeries.checked = isSeries;
   if (DOM.labelTypeMovie) DOM.labelTypeMovie.classList.toggle('active', !isSeries);
   if (DOM.labelTypeSeries) DOM.labelTypeSeries.classList.toggle('active', isSeries);
+
+  const titleLabel = document.getElementById('movieTitleLabel');
+  if (titleLabel) titleLabel.innerHTML = (isSeries ? 'نام سریال' : 'نام فیلم') + ' <span class="required">*</span>';
+
+  const releaseYearLabel = document.getElementById('movieReleaseYearLabel');
+  if (releaseYearLabel) releaseYearLabel.innerHTML = (isSeries ? 'سال شروع پخش سریال' : 'سال ساخت فیلم') + ' <span class="required">*</span>';
+
+  const synopsisLabel = document.getElementById('movieSynopsisLabel');
+  if (synopsisLabel) synopsisLabel.innerHTML = (isSeries ? 'خلاصه داستان سریال' : 'خلاصه داستان فیلم') + ' <span class="required">*</span>';
+
+  const posterLabel = document.getElementById('posterLabel');
+  if (posterLabel) posterLabel.innerHTML = (isSeries ? 'پوستر سریال' : 'پوستر فیلم') + ' <span class="badge-auto-field">بارگذاری خودکار</span>';
+
+  const posterIconBig = document.getElementById('posterIconBig');
+  if (posterIconBig) posterIconBig.textContent = isSeries ? '📺' : '🎬';
+
+  const favLabel = document.getElementById('favCheckboxLabel');
+  if (favLabel) favLabel.textContent = isSeries ? '❤️ افزودن به سریال‌های محبوب و برگزیده من' : '❤️ افزودن به فیلم‌های محبوب و برگزیده من';
+
+  if (DOM.movieTitle) {
+    DOM.movieTitle.placeholder = isSeries 
+      ? 'نام سریال را بنویسید (مثلاً: Game of Thrones، زخم کاری، Breaking Bad...)'
+      : 'نام فیلم را بنویسید (مثلاً: Inception، مارمولک، Dune...)';
+  }
 }
 
 function getMediaType() {
