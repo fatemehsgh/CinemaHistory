@@ -57,9 +57,12 @@ const DOM = {
   userProfileBtn: document.getElementById('userProfileBtn'),
   navUserName: document.getElementById('navUserName'),
   navUserAvatar: document.getElementById('navUserAvatar'),
+  navUserSyncDot: document.getElementById('navUserSyncDot'),
   btnOpenAddMovie: document.getElementById('btnOpenAddMovie'),
   btnOpenStats: document.getElementById('btnOpenStats'),
   btnExportData: document.getElementById('btnExportData'),
+  btnImportData: document.getElementById('btnImportData'),
+  importFileInput: document.getElementById('importFileInput'),
   btnCreateDesktopShortcut: document.getElementById('btnCreateDesktopShortcut'),
   btnClearAllMovies: document.getElementById('btnClearAllMovies'),
 
@@ -170,6 +173,13 @@ const DOM = {
   btnSaveCloudSync: document.getElementById('btnSaveCloudSync'),
   btnDisconnectCloudSync: document.getElementById('btnDisconnectCloudSync'),
   btnShareCloudSync: document.getElementById('btnShareCloudSync'),
+  cloudQrBox: document.getElementById('cloudQrBox'),
+  cloudQrImg: document.getElementById('cloudQrImg'),
+  localNetworkBox: document.getElementById('localNetworkBox'),
+  localNetworkUrl: document.getElementById('localNetworkUrl'),
+  btnCopyNetworkUrl: document.getElementById('btnCopyNetworkUrl'),
+  localQrWrapper: document.getElementById('localQrWrapper'),
+  localNetworkQrImg: document.getElementById('localNetworkQrImg'),
   btnGoogleLogin: document.getElementById('btnGoogleLogin'),
   authGoogleView: document.getElementById('authGoogleView'),
   btnBackFromGoogle: document.getElementById('btnBackFromGoogle'),
@@ -359,19 +369,78 @@ function updateCloudStatusUI() {
 
   if (url && key && supabaseClient) {
     if (DOM.cloudSyncStatusText) {
-      DOM.cloudSyncStatusText.textContent = '🟢 متصل به ابر (Supabase) - همگام‌سازی بین گوشی و کامپیوتر فعال است';
+      DOM.cloudSyncStatusText.textContent = '🟢 متصل به ابر (Supabase) - همگام‌سازی بین تمام سیستم‌ها و گوشی فعال است';
       DOM.cloudSyncStatusText.className = 'cloud-status-text connected';
+    }
+    if (DOM.navUserSyncDot) {
+      DOM.navUserSyncDot.classList.add('connected');
+      DOM.navUserSyncDot.title = 'همگام‌سازی ابری فعال است';
     }
     if (DOM.btnDisconnectCloudSync) DOM.btnDisconnectCloudSync.style.display = 'block';
     if (DOM.btnShareCloudSync) DOM.btnShareCloudSync.style.display = 'block';
+    renderCloudSyncQr();
   } else {
     if (DOM.cloudSyncStatusText) {
       DOM.cloudSyncStatusText.textContent = '⚪ آفلاین (حافظه محلی مرورگر)';
       DOM.cloudSyncStatusText.className = 'cloud-status-text disconnected';
     }
+    if (DOM.navUserSyncDot) {
+      DOM.navUserSyncDot.classList.remove('connected');
+      DOM.navUserSyncDot.title = 'حالت محلی';
+    }
     if (DOM.btnDisconnectCloudSync) DOM.btnDisconnectCloudSync.style.display = 'none';
     if (DOM.btnShareCloudSync) DOM.btnShareCloudSync.style.display = 'none';
+    if (DOM.cloudQrBox) DOM.cloudQrBox.style.display = 'none';
   }
+  checkLocalNetworkInfo();
+}
+
+function renderCloudSyncQr() {
+  const { url, key } = getSupabaseConfig();
+  if (url && key && DOM.cloudQrBox && DOM.cloudQrImg) {
+    const payload = btoa(encodeURIComponent(JSON.stringify({ url, key })));
+    const fullUrl = `${window.location.origin}${window.location.pathname}#connect=${payload}`;
+    DOM.cloudQrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(fullUrl)}`;
+    DOM.cloudQrBox.style.display = 'block';
+  } else if (DOM.cloudQrBox) {
+    DOM.cloudQrBox.style.display = 'none';
+  }
+}
+
+async function checkLocalNetworkInfo() {
+  if (IS_STATIC_HOST || !DOM.localNetworkBox) return;
+  try {
+    const res = await fetch('/api/network-info');
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data.ips && data.ips.length > 0) {
+      const netUrl = `http://${data.ips[0]}:${data.port || 3000}`;
+      if (DOM.localNetworkUrl) DOM.localNetworkUrl.textContent = netUrl;
+      DOM.localNetworkBox.style.display = 'block';
+      if (DOM.localNetworkQrImg && DOM.localQrWrapper) {
+        DOM.localNetworkQrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(netUrl)}`;
+        DOM.localQrWrapper.style.display = 'inline-flex';
+      }
+    }
+  } catch (e) {}
+}
+
+async function fetchServerCloudConfig() {
+  if (IS_STATIC_HOST) return;
+  const { url, key } = getSupabaseConfig();
+  if (url && key) return;
+  try {
+    const res = await fetch('/api/cloud-config');
+    if (res.ok) {
+      const data = await res.json();
+      if (data.url && data.key) {
+        localStorage.setItem('cinelog_supabase_url', data.url.trim());
+        localStorage.setItem('cinelog_supabase_anon_key', data.key.trim());
+        initSupabase();
+        updateCloudStatusUI();
+      }
+    }
+  } catch (e) {}
 }
 
 async function migrateLocalMoviesToSupabase(userId) {
@@ -603,6 +672,7 @@ async function apiCall(endpoint, method = 'GET', body = null) {
 }
 
 async function initAuth() {
+  await fetchServerCloudConfig();
   const isCloudReady = initSupabase();
   updateCloudStatusUI();
 
@@ -1887,11 +1957,18 @@ function setupAuthModal() {
     }
   }
 
-  DOM.userProfileBtn.addEventListener('click', () => {
+  const handleOpenAuthModal = (e) => {
+    if (e) e.preventDefault();
     updateUserUI();
     updateCloudStatusUI();
     DOM.authModal.classList.add('open');
-  });
+  };
+
+  DOM.userProfileBtn.addEventListener('click', handleOpenAuthModal);
+  DOM.userProfileBtn.addEventListener('touchend', (e) => {
+    e.preventDefault();
+    handleOpenAuthModal(e);
+  }, { passive: false });
 
   DOM.btnCloseAuthModal.addEventListener('click', () => {
     DOM.authModal.classList.remove('open');
@@ -2165,9 +2242,20 @@ function setupAuthModal() {
 
       localStorage.setItem('cinelog_supabase_url', url);
       localStorage.setItem('cinelog_supabase_anon_key', key);
+
+      if (!IS_STATIC_HOST) {
+        try {
+          await fetch('/api/cloud-config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url, key })
+          });
+        } catch (e) {}
+      }
+
       initSupabase();
       updateCloudStatusUI();
-      showToast('اتصال به سرور ابری با موفقیت برقرار شد! 🎉', 'success');
+      showToast('اتصال به سرور ابری با موفقیت برقرار شد! 🎉 تمام دستگاه‌ها هم‌اکنون به این اکانت وصل می‌شوند.', 'success');
       await initAuth();
     } catch (err) {
       showToast('خطا در اتصال به Supabase: ' + (err.message || 'مشخصات وارد شده نامعتبر است.'), 'error');
@@ -2178,6 +2266,15 @@ function setupAuthModal() {
     if (!confirm('آیا مایل به قطع ارتباط با سرور ابری هستید؟')) return;
     localStorage.removeItem('cinelog_supabase_url');
     localStorage.removeItem('cinelog_supabase_anon_key');
+    if (!IS_STATIC_HOST) {
+      try {
+        await fetch('/api/cloud-config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: '', key: '' })
+        });
+      } catch (e) {}
+    }
     if (supabaseClient) {
       try { await supabaseClient.auth.signOut(); } catch (e) {}
       supabaseClient = null;
@@ -2313,6 +2410,58 @@ function exportDataBackup() {
   showToast('فایل پشتیبان JSON دانلود شد.', 'success');
 }
 
+function handleImportBackup(e) {
+  const file = e.target.files?.[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = async (event) => {
+    try {
+      const raw = event.target.result;
+      const data = JSON.parse(raw);
+      const importedMovies = Array.isArray(data) ? data : (data.movies || []);
+
+      if (!Array.isArray(importedMovies) || importedMovies.length === 0) {
+        showToast('فایل پشتیبان معتبر نیست یا فیلمی در آن یافت نشد.', 'error');
+        return;
+      }
+
+      const existingMap = new Map(STATE.movies.map(m => [m.id, m]));
+      importedMovies.forEach(m => {
+        if (m.id && m.title) {
+          existingMap.set(m.id, { ...existingMap.get(m.id), ...m });
+        }
+      });
+      STATE.movies = Array.from(existingMap.values());
+      saveLocalMovies();
+
+      if (data.user && (!STATE.user || STATE.user.id === 'usr-guest')) {
+        STATE.user = data.user;
+        localStorage.setItem('cinelog_user', JSON.stringify(data.user));
+        updateUserUI();
+      }
+
+      if (supabaseClient && STATE.user) {
+        try {
+          const rows = STATE.movies.map(m => movieToDb(m, STATE.user.id));
+          await supabaseClient.from('movies').upsert(rows);
+        } catch (err) {
+          console.warn('Import cloud sync error:', err);
+        }
+      }
+
+      applyFiltersAndSort();
+      updateStatsSummary();
+      showToast(`پشتیبان با موفقیت بازیابی شد (${toPersianDigits(importedMovies.length)} فیلم)! 🎉`, 'success');
+    } catch (err) {
+      showToast('خطا در خواندن فایل پشتیبان: فرمت JSON نامعتبر است.', 'error');
+    } finally {
+      e.target.value = '';
+    }
+  };
+  reader.readAsText(file);
+}
+
 // ========================================================
 // EVENT LISTENERS
 // ========================================================
@@ -2401,6 +2550,22 @@ function setupEventListeners() {
   DOM.btnOpenStats.addEventListener('click', openStatsModal);
   DOM.btnCloseStatsModal.addEventListener('click', () => DOM.statsModal.classList.remove('open'));
   DOM.btnExportData.addEventListener('click', exportDataBackup);
+
+  DOM.btnImportData?.addEventListener('click', () => {
+    DOM.importFileInput?.click();
+  });
+  DOM.importFileInput?.addEventListener('change', handleImportBackup);
+
+  DOM.btnCopyNetworkUrl?.addEventListener('click', () => {
+    const text = DOM.localNetworkUrl?.textContent || '';
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(() => {
+        showToast('آدرس شبکه محلی کپی شد! در مرورگر گوشی باز کنید.', 'success');
+      });
+    } else {
+      prompt('آدرس را کپی کرده و در گوشی باز کنید:', text);
+    }
+  });
 
   if (DOM.btnClearAllMovies) {
     DOM.btnClearAllMovies.addEventListener('click', async () => {

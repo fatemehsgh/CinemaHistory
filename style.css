@@ -145,11 +145,17 @@ body {
   align-items: center;
   justify-content: space-between;
   padding: 16px 28px;
-  flex-wrap: wrap;
   gap: 16px;
+  position: relative;
+  z-index: 50;
+}
+
+.header-top-row {
+  display: contents; /* Unwraps children on desktop so brand and user pill act as direct flex items */
 }
 
 .header-brand {
+  order: 1;
   display: flex;
   align-items: center;
   gap: 16px;
@@ -190,9 +196,15 @@ body {
 }
 
 .header-actions {
+  order: 2;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
+  margin-right: auto;
+}
+
+#userProfileBtn {
+  order: 3;
 }
 
 /* Buttons */
@@ -272,15 +284,30 @@ body {
 
 /* User Pill in Header */
 .user-pill {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 10px;
   padding: 6px 14px 6px 12px;
   cursor: pointer;
   border-radius: var(--radius-full);
+  border: 1px solid var(--border-glass);
+  background: var(--bg-card);
+  color: var(--text-main);
+  font-family: inherit;
+  font-size: inherit;
+  outline: none;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  transition: var(--transition);
 }
 
-.user-pill:hover {
+.user-pill * {
+  pointer-events: none;
+}
+
+.user-pill:hover,
+.user-pill:focus-visible {
   border-color: var(--gold-500);
   background: var(--bg-card-hover);
 }
@@ -297,6 +324,21 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.user-sync-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #6b7280;
+  display: inline-block;
+  transition: all 0.3s ease;
+  flex-shrink: 0;
+}
+
+.user-sync-indicator.connected {
+  background: #10b981;
+  box-shadow: 0 0 8px rgba(16, 185, 129, 0.7);
 }
 
 .chevron-down {
@@ -1803,6 +1845,87 @@ body {
   display: inline-block;
 }
 
+/* Cloud QR Code & Local Network */
+.cloud-qr-box {
+  margin-top: 16px;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.45);
+  border: 1px dashed rgba(245, 158, 11, 0.4);
+  border-radius: var(--radius-md);
+  text-align: center;
+}
+
+.qr-box-title {
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: var(--gold-400);
+  margin-bottom: 10px;
+}
+
+.qr-image-wrapper {
+  display: inline-flex;
+  padding: 8px;
+  background: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+  margin-bottom: 8px;
+}
+
+.qr-image-wrapper img {
+  width: 170px;
+  height: 170px;
+  display: block;
+  border-radius: 4px;
+}
+
+.qr-box-subtitle {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.local-network-box {
+  margin-top: 14px;
+  padding: 14px;
+  background: rgba(59, 130, 246, 0.08);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  border-radius: var(--radius-md);
+}
+
+.local-network-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #60a5fa;
+  margin-bottom: 6px;
+}
+
+.local-network-desc {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+.network-url-pill {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: rgba(0, 0, 0, 0.5);
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-glass);
+}
+
+.network-url-pill code {
+  direction: ltr;
+  font-family: var(--font-en);
+  font-size: 0.88rem;
+  color: var(--gold-400);
+  word-break: break-all;
+}
+
 /* ========================================================
    STATS MODAL & CHARTS
    ======================================================== */
@@ -2449,13 +2572,23 @@ body {
     gap: 16px;
   }
   
-  /* Header */
+  /* Header Mobile Optimization */
   .main-header {
+    display: flex;
+    flex-direction: column;
     padding: 12px 14px;
     gap: 10px;
   }
   
+  .header-top-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+  }
+
   .header-brand {
+    order: unset;
     gap: 10px;
   }
 
@@ -2478,8 +2611,35 @@ body {
     font-size: 0.85rem;
   }
 
+  #userProfileBtn {
+    order: unset;
+    padding: 6px 14px;
+    gap: 8px;
+    min-height: 42px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(245, 158, 11, 0.4);
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+  }
+
+  .user-name {
+    max-width: 110px;
+    font-size: 0.85rem;
+  }
+
   .header-actions {
-    gap: 6px;
+    order: unset;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    margin-right: 0;
+  }
+
+  #btnOpenAddMovie {
+    flex: 1;
+    justify-content: center;
+    padding: 9px 12px;
+    font-size: 0.88rem;
   }
 
   .btn {
@@ -2491,16 +2651,6 @@ body {
     width: 36px;
     height: 36px;
     padding: 0;
-  }
-
-  .user-pill {
-    padding: 5px 10px;
-    gap: 6px;
-  }
-
-  .user-name {
-    max-width: 80px;
-    font-size: 0.82rem;
   }
 
   /* Stats Strip: Neat 2x2 grid */

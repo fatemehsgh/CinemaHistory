@@ -262,6 +262,46 @@ const server = http.createServer(async (req, res) => {
     });
   }
 
+  // 2.47 Cloud Config: Supabase Sync Settings across devices
+  if (pathname === '/api/cloud-config' && req.method === 'GET') {
+    const db = readDB();
+    return sendJSON(200, {
+      url: db.supabaseUrl || process.env.SUPABASE_URL || '',
+      key: db.supabaseKey || process.env.SUPABASE_ANON_KEY || ''
+    });
+  }
+
+  if (pathname === '/api/cloud-config' && req.method === 'POST') {
+    const db = readDB();
+    const body = await parseBody(req);
+    db.supabaseUrl = (body.url || '').trim();
+    db.supabaseKey = (body.key || '').trim();
+    writeDB(db);
+    return sendJSON(200, {
+      success: true,
+      url: db.supabaseUrl,
+      key: db.supabaseKey
+    });
+  }
+
+  // 2.48 Network Info: Local Wi-Fi IP address for easy mobile connection
+  if (pathname === '/api/network-info' && req.method === 'GET') {
+    const os = require('os');
+    const interfaces = os.networkInterfaces();
+    const ips = [];
+    for (const name of Object.keys(interfaces)) {
+      for (const iface of interfaces[name]) {
+        if (iface.family === 'IPv4' && !iface.internal) {
+          ips.push(iface.address);
+        }
+      }
+    }
+    return sendJSON(200, {
+      port: PORT,
+      ips
+    });
+  }
+
   // 2.5 Auth: Google OAuth (Google Identity Services JWT)
   if (pathname === '/api/google-login' && req.method === 'POST') {
     const db = readDB();
@@ -733,6 +773,21 @@ oLink.Save
   }
 });
 
-server.listen(PORT, () => {
-  console.log(`🎬 CineLog Server is running at http://localhost:${PORT}`);
+server.listen(PORT, '0.0.0.0', () => {
+  const os = require('os');
+  const interfaces = os.networkInterfaces();
+  const ips = [];
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of interfaces[name]) {
+      if (iface.family === 'IPv4' && !iface.internal) {
+        ips.push(iface.address);
+      }
+    }
+  }
+
+  console.log(`🎬 CineLog Server is running:`);
+  console.log(`   💻 Local (PC):    http://localhost:${PORT}`);
+  ips.forEach(ip => {
+    console.log(`   📱 Network (Phone): http://${ip}:${PORT}`);
+  });
 });
