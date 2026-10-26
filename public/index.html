@@ -25,7 +25,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&family=Vazirmatn:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
   
-  <link rel="stylesheet" href="style.css?v=2.4.0">
+  <link rel="stylesheet" href="style.css?v=2.5.0">
 </head>
 <body>
   <!-- Ambient Background Glows -->
@@ -581,8 +581,52 @@
 
             <button type="submit" class="btn btn-accent full-width">ساخت حساب کاربری</button>
           </form>
+        </div>
 
+        <!-- Cloud Sync (Supabase) Card -->
+        <div class="cloud-sync-card glass-card">
+          <div class="cloud-sync-header" id="btnToggleCloudSync">
+            <div class="cloud-sync-title">
+              <span class="cloud-sync-icon">☁️</span>
+              <div>
+                <h4>همگام‌سازی ابری (اتصال گوشی و کامپیوتر)</h4>
+                <p id="cloudSyncStatusText" class="cloud-status-text">وضعیت: آفلاین (حافظه محلی)</p>
+              </div>
+            </div>
+            <span class="cloud-sync-arrow" id="cloudSyncArrow">▾</span>
+          </div>
 
+          <div class="cloud-sync-body" id="cloudSyncBody" style="display: none;">
+            <p class="cloud-sync-desc">
+              با اتصال به دیتابیس ابری Supabase، اکانت و تمام فیلم‌های شما روی سرور ابری قرار می‌گیرد و با باز کردن این سایت در هر گوشی یا کامپیوتری، بلافاصله به اکانت خود وصل می‌شوید.
+            </p>
+
+            <div class="form-group">
+              <label for="supabaseUrlInput">آدرس پروژه Supabase (Project URL)</label>
+              <input type="text" id="supabaseUrlInput" class="form-input ltr-input" placeholder="https://xyzcompany.supabase.co">
+            </div>
+
+            <div class="form-group">
+              <label for="supabaseKeyInput">کلید عمومی (anon public key)</label>
+              <input type="password" id="supabaseKeyInput" class="form-input ltr-input" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...">
+            </div>
+
+            <div class="cloud-sync-actions">
+              <button type="button" id="btnSaveCloudSync" class="btn btn-primary full-width">
+                <span>ذخیره و اتصال به دیتابیس ابری</span>
+              </button>
+              <button type="button" id="btnShareCloudSync" class="btn btn-secondary full-width" style="display: none;">
+                <span>🔗 کپی لینک سریع اتصال برای گوشی</span>
+              </button>
+              <button type="button" id="btnDisconnectCloudSync" class="btn btn-danger full-width" style="display: none;">
+                <span>قطع اتصال ابری و بازگشت به حالت محلی</span>
+              </button>
+            </div>
+
+            <div class="cloud-help-box">
+              <p>💡 <strong>راهنما:</strong> در <a href="https://supabase.com" target="_blank" rel="noopener">supabase.com</a> یک پروژه رایگان بسازید، کدهای فایل <code>supabase-setup.sql</code> را در منوی SQL Editor اجرا کنید، سپس Project URL و Anon Key را در بالا وارد نمایید.</p>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -622,7 +666,8 @@
   <div id="toastContainer" class="toast-container"></div>
 
   <!-- Scripts -->
-  <script src="curated-movies.js?v=2.3.0"></script>
-  <script src="app.js?v=2.3.0"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="curated-movies.js?v=2.5.0"></script>
+  <script src="app.js?v=2.5.0"></script>
 </body>
 </html>

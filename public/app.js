@@ -159,6 +159,17 @@ const DOM = {
   avatarPickerGrid: document.getElementById('avatarPickerGrid'),
   btnSwitchAccount: document.getElementById('btnSwitchAccount'),
   btnLogout: document.getElementById('btnLogout'),
+
+  // Cloud Sync (Supabase)
+  btnToggleCloudSync: document.getElementById('btnToggleCloudSync'),
+  cloudSyncArrow: document.getElementById('cloudSyncArrow'),
+  cloudSyncBody: document.getElementById('cloudSyncBody'),
+  cloudSyncStatusText: document.getElementById('cloudSyncStatusText'),
+  supabaseUrlInput: document.getElementById('supabaseUrlInput'),
+  supabaseKeyInput: document.getElementById('supabaseKeyInput'),
+  btnSaveCloudSync: document.getElementById('btnSaveCloudSync'),
+  btnDisconnectCloudSync: document.getElementById('btnDisconnectCloudSync'),
+  btnShareCloudSync: document.getElementById('btnShareCloudSync'),
   btnGoogleLogin: document.getElementById('btnGoogleLogin'),
   authGoogleView: document.getElementById('authGoogleView'),
   btnBackFromGoogle: document.getElementById('btnBackFromGoogle'),
@@ -219,6 +230,170 @@ function escapeHTML(str) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
+}
+
+// ========================================================
+// SUPABASE CLOUD SYNC & CROSS-DEVICE CONTROLLER
+// ========================================================
+let supabaseClient = null;
+let realtimeChannel = null;
+
+function checkUrlHashConnection() {
+  try {
+    const hash = window.location.hash;
+    if (hash && (hash.startsWith('#connect=') || hash.startsWith('#supabase='))) {
+      let raw = '';
+      if (hash.startsWith('#connect=')) {
+        const encoded = hash.replace('#connect=', '');
+        raw = decodeURIComponent(atob(encoded));
+      } else {
+        const encoded = hash.replace('#supabase=', '');
+        raw = decodeURIComponent(atob(encoded));
+      }
+      const parsed = JSON.parse(raw);
+      if (parsed.url && parsed.key) {
+        localStorage.setItem('cinelog_supabase_url', parsed.url.trim());
+        localStorage.setItem('cinelog_supabase_anon_key', parsed.key.trim());
+        window.history.replaceState(null, '', window.location.pathname + window.location.search);
+        showToast('اطلاعات اتصال ابری از لینک دریافت شد! در حال آماده‌سازی دیتابیس...', 'success');
+        return true;
+      }
+    }
+  } catch (e) {
+    console.warn('Hash connect error:', e);
+  }
+  return false;
+}
+
+function getSupabaseConfig() {
+  return {
+    url: (localStorage.getItem('cinelog_supabase_url') || '').trim(),
+    key: (localStorage.getItem('cinelog_supabase_anon_key') || '').trim()
+  };
+}
+
+function initSupabase() {
+  checkUrlHashConnection();
+  const { url, key } = getSupabaseConfig();
+  if (url && key && window.supabase && typeof window.supabase.createClient === 'function') {
+    try {
+      supabaseClient = window.supabase.createClient(url, key, {
+        auth: {
+          persistSession: true,
+          autoRefreshToken: true,
+          detectSessionInUrl: true
+        }
+      });
+      setupRealtimeSync();
+      return true;
+    } catch (e) {
+      console.error('Failed to init Supabase:', e);
+      supabaseClient = null;
+    }
+  } else {
+    supabaseClient = null;
+  }
+  return false;
+}
+
+function setupRealtimeSync() {
+  if (!supabaseClient) return;
+  try {
+    if (realtimeChannel) {
+      supabaseClient.removeChannel(realtimeChannel);
+    }
+    realtimeChannel = supabaseClient
+      .channel('cinelog_movies_sync')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'movies' }, async (payload) => {
+        console.log('Realtime movie change detected:', payload);
+        if (STATE.user) {
+          await loadMovies(false);
+        }
+      })
+      .subscribe();
+  } catch (e) {
+    console.warn('Realtime subscription error:', e);
+  }
+}
+
+function movieToDb(m, userId) {
+  return {
+    id: m.id || ('mov-' + Date.now()),
+    user_id: userId,
+    title: m.title || '',
+    release_year: m.releaseYear ? parseInt(m.releaseYear) : (m.release_year ? parseInt(m.release_year) : null),
+    watch_year: m.watchYear ? parseInt(m.watchYear) : (m.watch_year ? parseInt(m.watch_year) : null),
+    media_type: m.mediaType || m.media_type || 'movie',
+    synopsis: m.synopsis || '',
+    genres: Array.isArray(m.genres) ? m.genres : [],
+    rating: m.rating !== undefined && m.rating !== null ? Number(m.rating) : null,
+    poster: m.poster || '',
+    review: m.review || '',
+    is_favorite: Boolean(m.isFavorite || m.is_favorite),
+    updated_at: new Date().toISOString()
+  };
+}
+
+function movieFromDb(row) {
+  return {
+    id: row.id,
+    title: row.title || '',
+    releaseYear: row.release_year,
+    watchYear: row.watch_year,
+    mediaType: row.media_type || 'movie',
+    synopsis: row.synopsis || '',
+    genres: row.genres || [],
+    rating: row.rating !== undefined && row.rating !== null ? Number(row.rating) : 0,
+    poster: row.poster || '',
+    review: row.review || '',
+    isFavorite: Boolean(row.is_favorite),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
+function updateCloudStatusUI() {
+  const { url, key } = getSupabaseConfig();
+  if (DOM.supabaseUrlInput) DOM.supabaseUrlInput.value = url;
+  if (DOM.supabaseKeyInput) DOM.supabaseKeyInput.value = key;
+
+  if (url && key && supabaseClient) {
+    if (DOM.cloudSyncStatusText) {
+      DOM.cloudSyncStatusText.textContent = '🟢 متصل به ابر (Supabase) - همگام‌سازی بین گوشی و کامپیوتر فعال است';
+      DOM.cloudSyncStatusText.className = 'cloud-status-text connected';
+    }
+    if (DOM.btnDisconnectCloudSync) DOM.btnDisconnectCloudSync.style.display = 'block';
+    if (DOM.btnShareCloudSync) DOM.btnShareCloudSync.style.display = 'block';
+  } else {
+    if (DOM.cloudSyncStatusText) {
+      DOM.cloudSyncStatusText.textContent = '⚪ آفلاین (حافظه محلی مرورگر)';
+      DOM.cloudSyncStatusText.className = 'cloud-status-text disconnected';
+    }
+    if (DOM.btnDisconnectCloudSync) DOM.btnDisconnectCloudSync.style.display = 'none';
+    if (DOM.btnShareCloudSync) DOM.btnShareCloudSync.style.display = 'none';
+  }
+}
+
+async function migrateLocalMoviesToSupabase(userId) {
+  if (!supabaseClient || !userId) return;
+  try {
+    const localMovies = JSON.parse(localStorage.getItem('cinelog_movies') || '[]');
+    if (localMovies.length === 0) return;
+
+    const { count, error } = await supabaseClient
+      .from('movies')
+      .select('*', { count: 'exact', head: true });
+
+    if (!error && count === 0) {
+      const rows = localMovies.map(m => movieToDb(m, userId));
+      const { error: insertErr } = await supabaseClient.from('movies').insert(rows);
+      if (!insertErr) {
+        showToast(`${toPersianDigits(rows.length)} فیلم قبلی شما به حساب ابری منتقل شد!`, 'success');
+      }
+    }
+  } catch (e) {
+    console.warn('Migration error:', e);
+  }
 }
 
 // ========================================================
@@ -428,6 +603,48 @@ async function apiCall(endpoint, method = 'GET', body = null) {
 }
 
 async function initAuth() {
+  const isCloudReady = initSupabase();
+  updateCloudStatusUI();
+
+  if (isCloudReady && supabaseClient) {
+    try {
+      const { data: { session } } = await supabaseClient.auth.getSession();
+      if (session?.user) {
+        let profile = null;
+        try {
+          const { data } = await supabaseClient
+            .from('profiles')
+            .select('*')
+            .eq('id', session.user.id)
+            .maybeSingle();
+          profile = data;
+        } catch (e) {}
+
+        STATE.user = {
+          id: session.user.id,
+          name: profile?.name || session.user.user_metadata?.name || 'کاربر سینما',
+          username: profile?.username || session.user.user_metadata?.username || (session.user.email ? session.user.email.split('@')[0] : 'cinema'),
+          email: session.user.email,
+          avatar: profile?.avatar || session.user.user_metadata?.avatar || '🎬',
+          bio: profile?.bio || 'دفترچه خاطرات سینمایی من'
+        };
+        updateUserUI();
+        await migrateLocalMoviesToSupabase(STATE.user.id);
+        await loadMovies();
+        return;
+      } else {
+        // Supabase is connected but user is not logged in yet
+        STATE.token = '';
+        STATE.user = null;
+        updateUserUI();
+        await loadMovies();
+        return;
+      }
+    } catch (err) {
+      console.warn('Supabase session restore check failed:', err);
+    }
+  }
+
   const storedLocalUser = JSON.parse(localStorage.getItem('cinelog_local_user') || 'null');
   if (storedLocalUser && (storedLocalUser.username === 'cinema' || storedLocalUser.id === 'local-1')) {
     localStorage.removeItem('cinelog_local_user');
@@ -486,12 +703,32 @@ function updateUserUI() {
 // ========================================================
 // MOVIES DATA
 // ========================================================
-async function loadMovies() {
+async function loadMovies(showLoading = true) {
   if (!STATE.user) {
     STATE.movies = [];
     applyFiltersAndSort();
     updateStatsSummary();
     return;
+  }
+
+  if (supabaseClient) {
+    try {
+      const { data, error } = await supabaseClient
+        .from('movies')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (!error && Array.isArray(data)) {
+        STATE.movies = data.map(movieFromDb);
+        applyFiltersAndSort();
+        updateStatsSummary();
+        return;
+      } else if (error) {
+        console.warn('Supabase fetch movies error:', error);
+      }
+    } catch (e) {
+      console.warn('Supabase loadMovies exception:', e);
+    }
   }
 
   try {
@@ -1458,28 +1695,57 @@ async function handleMovieFormSubmit(e) {
   try {
     if (STATE.isEditMode) {
       const id = DOM.editMovieId.value;
-      try {
-        await apiCall(`/api/movies/${id}`, 'PUT', payload);
-      } catch (err) {
+      if (supabaseClient && STATE.user) {
+        const dbUpdate = {
+          title: payload.title,
+          release_year: payload.releaseYear,
+          watch_year: payload.watchYear,
+          media_type: payload.mediaType,
+          synopsis: payload.synopsis,
+          genres: payload.genres,
+          rating: payload.rating,
+          poster: payload.poster,
+          review: payload.review,
+          is_favorite: payload.isFavorite,
+          updated_at: new Date().toISOString()
+        };
+        const { error } = await supabaseClient.from('movies').update(dbUpdate).eq('id', id);
+        if (error) throw new Error('خطا در ویرایش ابری: ' + error.message);
         const idx = STATE.movies.findIndex(m => m.id === id);
         if (idx !== -1) {
           STATE.movies[idx] = { ...STATE.movies[idx], ...payload };
-          saveLocalMovies();
+        }
+      } else {
+        try {
+          await apiCall(`/api/movies/${id}`, 'PUT', payload);
+        } catch (err) {
+          const idx = STATE.movies.findIndex(m => m.id === id);
+          if (idx !== -1) {
+            STATE.movies[idx] = { ...STATE.movies[idx], ...payload };
+            saveLocalMovies();
+          }
         }
       }
       showToast('مشخصات فیلم با موفقیت ویرایش شد.', 'success');
     } else {
-      try {
-        await apiCall('/api/movies', 'POST', payload);
-      } catch (err) {
-        const newMovie = {
-          id: 'mov-local-' + Date.now(),
-          userId: STATE.user?.id || 'local-1',
-          ...payload,
-          createdAt: new Date().toISOString()
-        };
-        STATE.movies.unshift(newMovie);
-        saveLocalMovies();
+      if (supabaseClient && STATE.user) {
+        const row = movieToDb(payload, STATE.user.id);
+        const { error } = await supabaseClient.from('movies').insert(row);
+        if (error) throw new Error('خطا در ذخیره ابری: ' + error.message);
+        STATE.movies.unshift(movieFromDb(row));
+      } else {
+        try {
+          await apiCall('/api/movies', 'POST', payload);
+        } catch (err) {
+          const newMovie = {
+            id: 'mov-local-' + Date.now(),
+            userId: STATE.user?.id || 'local-1',
+            ...payload,
+            createdAt: new Date().toISOString()
+          };
+          STATE.movies.unshift(newMovie);
+          saveLocalMovies();
+        }
       }
       showToast(`فیلم «${title}» با موفقیت در تاریخچه ذخیره شد!`, 'success');
     }
@@ -1539,10 +1805,18 @@ async function toggleFavorite(id) {
   const newFavState = !movie.isFavorite;
   movie.isFavorite = newFavState;
 
-  try {
-    await apiCall(`/api/movies/${id}`, 'PUT', { isFavorite: newFavState });
-  } catch (e) {
-    saveLocalMovies();
+  if (supabaseClient && STATE.user) {
+    try {
+      await supabaseClient.from('movies').update({ is_favorite: newFavState }).eq('id', id);
+    } catch (e) {
+      console.warn('Supabase toggle fav error:', e);
+    }
+  } else {
+    try {
+      await apiCall(`/api/movies/${id}`, 'PUT', { isFavorite: newFavState });
+    } catch (e) {
+      saveLocalMovies();
+    }
   }
 
   showToast(newFavState ? `«${movie.title}» به برگزیده‌ها اضافه شد.` : 'از برگزیده‌ها حذف شد.', 'info');
@@ -1558,11 +1832,19 @@ async function deleteMovie(id) {
     return;
   }
 
-  try {
-    await apiCall(`/api/movies/${id}`, 'DELETE');
-  } catch (e) {
-    STATE.movies = STATE.movies.filter(m => m.id !== id);
-    saveLocalMovies();
+  if (supabaseClient && STATE.user) {
+    try {
+      await supabaseClient.from('movies').delete().eq('id', id);
+    } catch (e) {
+      console.warn('Supabase delete movie error:', e);
+    }
+  } else {
+    try {
+      await apiCall(`/api/movies/${id}`, 'DELETE');
+    } catch (e) {
+      STATE.movies = STATE.movies.filter(m => m.id !== id);
+      saveLocalMovies();
+    }
   }
 
   showToast(`فیلم «${title}» از تاریخچه حذف شد.`, 'info');
@@ -1607,6 +1889,7 @@ function setupAuthModal() {
 
   DOM.userProfileBtn.addEventListener('click', () => {
     updateUserUI();
+    updateCloudStatusUI();
     DOM.authModal.classList.add('open');
   });
 
@@ -1650,6 +1933,69 @@ function setupAuthModal() {
       return;
     }
 
+    if (supabaseClient) {
+      try {
+        let loginEmail = username;
+        if (!loginEmail.includes('@')) {
+          try {
+            const { data: prof } = await supabaseClient
+              .from('profiles')
+              .select('email')
+              .eq('username', username.toLowerCase())
+              .maybeSingle();
+            if (prof && prof.email) {
+              loginEmail = prof.email;
+            } else {
+              loginEmail = `${username.toLowerCase()}@cinelog.app`;
+            }
+          } catch (e) {
+            loginEmail = `${username.toLowerCase()}@cinelog.app`;
+          }
+        }
+
+        const { data, error } = await supabaseClient.auth.signInWithPassword({
+          email: loginEmail,
+          password: password
+        });
+
+        if (error) {
+          if (error.message.includes('Invalid login credentials')) {
+            throw new Error('نام کاربری یا رمز عبور اشتباه است.');
+          }
+          throw new Error(error.message);
+        }
+
+        let profile = null;
+        try {
+          const { data: prof } = await supabaseClient
+            .from('profiles')
+            .select('*')
+            .eq('id', data.user.id)
+            .maybeSingle();
+          profile = prof;
+        } catch (e) {}
+
+        STATE.user = {
+          id: data.user.id,
+          name: profile?.name || data.user.user_metadata?.name || username,
+          username: profile?.username || data.user.user_metadata?.username || username,
+          email: data.user.email,
+          avatar: profile?.avatar || data.user.user_metadata?.avatar || '🎬',
+          bio: profile?.bio || 'دفترچه خاطرات سینمایی من'
+        };
+
+        updateUserUI();
+        DOM.authModal.classList.remove('open');
+        showToast(`خوش آمدید، ${STATE.user.name}! 🎬`, 'success');
+        await migrateLocalMoviesToSupabase(STATE.user.id);
+        await loadMovies();
+        return;
+      } catch (err) {
+        showToast(err.message || 'نام کاربری یا رمز عبور اشتباه است.', 'error');
+        return;
+      }
+    }
+
     try {
       const data = await apiCall('/api/login', 'POST', { username, password });
       STATE.token = data.token;
@@ -1672,6 +2018,71 @@ function setupAuthModal() {
     const password = DOM.regPassword.value.trim();
     const activeAvatar = DOM.avatarPickerGrid.querySelector('.avatar-opt.active')?.dataset.avatar || '🎬';
 
+    if (password.length < 4) {
+      showToast('رمز عبور باید حداقل ۴ کاراکتر باشد.', 'error');
+      return;
+    }
+
+    if (supabaseClient) {
+      try {
+        const cleanEmail = (email && email.includes('@')) ? email.toLowerCase() : `${username.toLowerCase()}@cinelog.app`;
+        const { data, error } = await supabaseClient.auth.signUp({
+          email: cleanEmail,
+          password: password,
+          options: {
+            data: {
+              name,
+              username: username.toLowerCase(),
+              avatar: activeAvatar
+            }
+          }
+        });
+
+        if (error) {
+          if (error.message.includes('User already registered')) {
+            throw new Error('این ایمیل یا نام کاربری قبلاً ثبت شده است. لطفاً وارد شوید.');
+          }
+          throw new Error(error.message);
+        }
+
+        if (!data.user) {
+          throw new Error('ثبت نام انجام نشد. لطفاً دوباره تلاش کنید.');
+        }
+
+        try {
+          await supabaseClient.from('profiles').upsert({
+            id: data.user.id,
+            name: name,
+            username: username.toLowerCase(),
+            email: cleanEmail,
+            avatar: activeAvatar,
+            bio: 'دفترچه خاطرات سینمایی من'
+          });
+        } catch (e) {
+          console.warn('Profile upsert warning:', e);
+        }
+
+        STATE.user = {
+          id: data.user.id,
+          name: name,
+          username: username.toLowerCase(),
+          email: cleanEmail,
+          avatar: activeAvatar,
+          bio: 'دفترچه خاطرات سینمایی من'
+        };
+
+        updateUserUI();
+        DOM.authModal.classList.remove('open');
+        showToast(`حساب ابری شما با موفقیت ساخته شد! خوش آمدید، ${STATE.user.name}.`, 'success');
+        await migrateLocalMoviesToSupabase(STATE.user.id);
+        await loadMovies();
+        return;
+      } catch (err) {
+        showToast(err.message || 'خطا در ثبت‌نام ابری.', 'error');
+        return;
+      }
+    }
+
     try {
       const data = await apiCall('/api/register', 'POST', {
         name,
@@ -1692,8 +2103,6 @@ function setupAuthModal() {
     }
   });
 
-
-
   // Clear legacy Google client id so no automatic Google popups are triggered
   localStorage.removeItem('cinelog_google_client_id');
 
@@ -1704,6 +2113,11 @@ function setupAuthModal() {
   });
 
   DOM.btnLogout.addEventListener('click', async () => {
+    if (supabaseClient) {
+      try {
+        await supabaseClient.auth.signOut();
+      } catch (e) {}
+    }
     try {
       await apiCall('/api/logout', 'POST');
     } catch (e) {}
@@ -1715,6 +2129,82 @@ function setupAuthModal() {
     updateUserUI();
     showToast('از حساب خارج شدید.', 'info');
     await loadMovies();
+  });
+
+  // Cloud Sync (Supabase) Event Listeners
+  DOM.btnToggleCloudSync?.addEventListener('click', () => {
+    const isHidden = DOM.cloudSyncBody.style.display === 'none';
+    DOM.cloudSyncBody.style.display = isHidden ? 'block' : 'none';
+    if (DOM.cloudSyncArrow) {
+      DOM.cloudSyncArrow.classList.toggle('rotated', isHidden);
+    }
+  });
+
+  DOM.btnSaveCloudSync?.addEventListener('click', async () => {
+    const url = (DOM.supabaseUrlInput.value || '').trim();
+    const key = (DOM.supabaseKeyInput.value || '').trim();
+
+    if (!url || !key) {
+      showToast('لطفاً آدرس پروژه (Project URL) و کلید عمومی (anon key) را وارد کنید.', 'error');
+      return;
+    }
+
+    if (!url.startsWith('https://') && !url.startsWith('http://')) {
+      showToast('آدرس پروژه باید با https:// شروع شود.', 'error');
+      return;
+    }
+
+    try {
+      if (!window.supabase || typeof window.supabase.createClient !== 'function') {
+        throw new Error('کتابخانه Supabase لود نشده است. اتصال اینترنت خود را بررسی کنید.');
+      }
+
+      showToast('در حال بررسی اتصال به دیتابیس ابری...', 'info');
+      const testClient = window.supabase.createClient(url, key);
+      await testClient.from('profiles').select('id').limit(1);
+
+      localStorage.setItem('cinelog_supabase_url', url);
+      localStorage.setItem('cinelog_supabase_anon_key', key);
+      initSupabase();
+      updateCloudStatusUI();
+      showToast('اتصال به سرور ابری با موفقیت برقرار شد! 🎉', 'success');
+      await initAuth();
+    } catch (err) {
+      showToast('خطا در اتصال به Supabase: ' + (err.message || 'مشخصات وارد شده نامعتبر است.'), 'error');
+    }
+  });
+
+  DOM.btnDisconnectCloudSync?.addEventListener('click', async () => {
+    if (!confirm('آیا مایل به قطع ارتباط با سرور ابری هستید؟')) return;
+    localStorage.removeItem('cinelog_supabase_url');
+    localStorage.removeItem('cinelog_supabase_anon_key');
+    if (supabaseClient) {
+      try { await supabaseClient.auth.signOut(); } catch (e) {}
+      supabaseClient = null;
+    }
+    updateCloudStatusUI();
+    showToast('اتصال ابری قطع شد. به حالت آفلاین بازگشتید.', 'info');
+    await initAuth();
+  });
+
+  DOM.btnShareCloudSync?.addEventListener('click', () => {
+    const { url, key } = getSupabaseConfig();
+    if (!url || !key) {
+      showToast('هنوز سرور ابری متصل نشده است.', 'error');
+      return;
+    }
+    const payload = btoa(encodeURIComponent(JSON.stringify({ url, key })));
+    const fullUrl = `${window.location.origin}${window.location.pathname}#connect=${payload}`;
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(fullUrl).then(() => {
+        showToast('لینک سریع کپی شد! این لینک را در گوشی خود باز کنید تا در ۱ ثانیه همگام شود. 📱', 'success');
+      }).catch(() => {
+        prompt('این لینک را کپی کرده و در مرورگر گوشی باز کنید:', fullUrl);
+      });
+    } else {
+      prompt('این لینک را کپی کرده و در مرورگر گوشی باز کنید:', fullUrl);
+    }
   });
 }
 
@@ -1921,11 +2411,19 @@ function setupEventListeners() {
       if (!confirm('آیا از پاک کردن تمامی فیلم‌های ثبت‌شده مطمئن هستید؟ تمام لیست خالی خواهد شد.')) {
         return;
       }
-      try {
-        await apiCall('/api/movies', 'DELETE');
-      } catch (e) {
-        localStorage.setItem('cinelog_movies', JSON.stringify([]));
-        localStorage.setItem('cinelog_local_movies', JSON.stringify([]));
+      if (supabaseClient && STATE.user) {
+        try {
+          await supabaseClient.from('movies').delete().eq('user_id', STATE.user.id);
+        } catch (e) {
+          console.warn('Supabase clear all error:', e);
+        }
+      } else {
+        try {
+          await apiCall('/api/movies', 'DELETE');
+        } catch (e) {
+          localStorage.setItem('cinelog_movies', JSON.stringify([]));
+          localStorage.setItem('cinelog_local_movies', JSON.stringify([]));
+        }
       }
       STATE.movies = [];
       STATE.filteredMovies = [];

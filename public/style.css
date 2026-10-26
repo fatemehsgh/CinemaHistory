@@ -1688,6 +1688,122 @@ body {
 }
 
 /* ========================================================
+   CLOUD SYNC (SUPABASE) CARD
+   ======================================================== */
+.cloud-sync-card {
+  margin-top: 18px;
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(139, 92, 246, 0.35);
+  background: rgba(139, 92, 246, 0.06);
+  backdrop-filter: blur(12px);
+  overflow: hidden;
+  transition: var(--transition);
+}
+
+.cloud-sync-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 13px 16px;
+  cursor: pointer;
+  user-select: none;
+  background: rgba(255, 255, 255, 0.03);
+  transition: var(--transition);
+}
+
+.cloud-sync-header:hover {
+  background: rgba(139, 92, 246, 0.14);
+}
+
+.cloud-sync-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.cloud-sync-icon {
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
+.cloud-sync-title h4 {
+  font-size: 0.95rem;
+  font-weight: 700;
+  margin: 0;
+  color: #f1f5f9;
+}
+
+.cloud-status-text {
+  font-size: 0.8rem;
+  margin: 3px 0 0 0;
+  color: var(--text-muted);
+}
+
+.cloud-status-text.connected {
+  color: #34d399;
+  font-weight: 700;
+}
+
+.cloud-status-text.disconnected {
+  color: #fbbf24;
+}
+
+.cloud-sync-arrow {
+  font-size: 1.1rem;
+  color: var(--text-muted);
+  transition: transform 0.25s ease;
+}
+
+.cloud-sync-arrow.rotated {
+  transform: rotate(180deg);
+}
+
+.cloud-sync-body {
+  padding: 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.cloud-sync-desc {
+  font-size: 0.82rem;
+  line-height: 1.6;
+  color: var(--text-muted);
+  margin-bottom: 14px;
+}
+
+.cloud-sync-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.cloud-help-box {
+  margin-top: 14px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px dashed rgba(255, 255, 255, 0.15);
+  border-radius: var(--radius-sm);
+  font-size: 0.78rem;
+  line-height: 1.6;
+  color: var(--text-dim);
+}
+
+.cloud-help-box a {
+  color: var(--gold-400);
+  text-decoration: underline;
+}
+
+.cloud-help-box code {
+  background: rgba(0, 0, 0, 0.4);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: monospace;
+  color: #38bdf8;
+  direction: ltr;
+  display: inline-block;
+}
+
+/* ========================================================
    STATS MODAL & CHARTS
    ======================================================== */
 .stats-modal-body {
