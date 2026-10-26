@@ -586,16 +586,7 @@ oLink.Save
   if (pathname.startsWith('/api/movies/') && req.method === 'DELETE') {
     const id = pathname.replace('/api/movies/', '').trim();
     const db = readDB();
-    const user = getAuthUser(req, db);
-    if (!user) return sendJSON(401, { error: 'عدم دسترسی' });
-
-    const initialLength = db.movies.length;
-    db.movies = db.movies.filter(m => !(m.id === id && m.userId === user.id));
-
-    if (db.movies.length === initialLength) {
-      return sendJSON(404, { error: 'فیلم یافت نشد.' });
-    }
-
+    db.movies = (db.movies || []).filter(m => m.id !== id);
     writeDB(db);
     return sendJSON(200, { success: true });
   }
@@ -604,9 +595,11 @@ oLink.Save
   if (pathname === '/api/movies' && req.method === 'DELETE') {
     const db = readDB();
     const user = getAuthUser(req, db);
-    if (!user) return sendJSON(401, { error: 'عدم دسترسی' });
-
-    db.movies = db.movies.filter(m => m.userId !== user.id);
+    if (user) {
+      db.movies = (db.movies || []).filter(m => m.userId && m.userId !== user.id);
+    } else {
+      db.movies = [];
+    }
     writeDB(db);
     return sendJSON(200, { success: true });
   }

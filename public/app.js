@@ -515,14 +515,19 @@ async function syncCloudDatabase() {
       localStorage.setItem('cinelog_users', JSON.stringify(mergedUsers));
 
       // 2. Sync movies
-      const localMovies = JSON.parse(localStorage.getItem('cinelog_movies') || '[]');
+      let deletedIds = new Set();
+      try {
+        deletedIds = new Set(JSON.parse(localStorage.getItem('cinelog_deleted_movie_ids') || '[]'));
+      } catch (e) {}
+
+      const localMovies = JSON.parse(localStorage.getItem('cinelog_movies') || '[]').filter(m => m && m.id && !deletedIds.has(m.id));
       const movieMap = new Map();
       localMovies.forEach(m => {
         if (m.id) movieMap.set(m.id, m);
       });
       if (Array.isArray(cloudDb.movies)) {
         cloudDb.movies.forEach(m => {
-          if (m.id && !movieMap.has(m.id)) {
+          if (m.id && !deletedIds.has(m.id) && !movieMap.has(m.id)) {
             movieMap.set(m.id, m);
             moviesChanged = true;
           }
@@ -532,8 +537,8 @@ async function syncCloudDatabase() {
       localStorage.setItem('cinelog_movies', JSON.stringify(mergedMovies));
       localStorage.setItem('cinelog_local_movies', JSON.stringify(mergedMovies));
 
-      // 3. If local storage had items not present in cloud, push union to cloud
-      if (mergedUsers.length > (cloudDb.users?.length || 0) || mergedMovies.length > (cloudDb.movies?.length || 0)) {
+      // 3. If users changed or movies were updated/deleted, sync to cloud
+      if (mergedUsers.length > (cloudDb.users?.length || 0) || mergedMovies.length !== (cloudDb.movies?.length || 0)) {
         pushToCloudDatabase({ users: mergedUsers, movies: mergedMovies });
       }
 
@@ -794,12 +799,26 @@ async function localApiFallback(endpoint, method = 'GET', body = null) {
     movies = movies.filter(m => m.id !== id);
     localStorage.setItem('cinelog_movies', JSON.stringify(movies));
     localStorage.setItem('cinelog_local_movies', JSON.stringify(movies));
+
+    try {
+      const deletedIds = JSON.parse(localStorage.getItem('cinelog_deleted_movie_ids') || '[]');
+      if (!deletedIds.includes(id)) deletedIds.push(id);
+      localStorage.setItem('cinelog_deleted_movie_ids', JSON.stringify(deletedIds));
+    } catch (e) {}
+
     pushToCloudDatabase({ movies });
     return { success: true };
   }
 
   // DELETE /api/movies (Delete all)
   if (cleanEndpoint === '/api/movies' && method === 'DELETE') {
+    let movies = JSON.parse(localStorage.getItem('cinelog_movies') || '[]');
+    try {
+      const deletedIds = JSON.parse(localStorage.getItem('cinelog_deleted_movie_ids') || '[]');
+      movies.forEach(m => { if (m?.id && !deletedIds.includes(m.id)) deletedIds.push(m.id); });
+      localStorage.setItem('cinelog_deleted_movie_ids', JSON.stringify(deletedIds));
+    } catch (e) {}
+
     localStorage.setItem('cinelog_movies', JSON.stringify([]));
     localStorage.setItem('cinelog_local_movies', JSON.stringify([]));
     pushToCloudDatabase({ movies: [] });
@@ -991,15 +1010,20 @@ function updateUserUI() {
 // MOVIES DATA
 // ========================================================
 async function loadMovies(showLoading = true) {
-  // 1. First, always display existing local movies immediately
+  let deletedIds = new Set();
+  try {
+    deletedIds = new Set(JSON.parse(localStorage.getItem('cinelog_deleted_movie_ids') || '[]'));
+  } catch (e) {}
+
+  // 1. First, always display existing local movies immediately (excluding deleted)
   let localMovies = [];
   try {
     const raw = localStorage.getItem('cinelog_movies') || localStorage.getItem('cinelog_local_movies');
     if (raw) localMovies = JSON.parse(raw);
   } catch (e) {}
 
-  if (Array.isArray(localMovies) && localMovies.length > 0) {
-    STATE.movies = localMovies;
+  if (Array.isArray(localMovies)) {
+    STATE.movies = localMovies.filter(m => m && m.id && !deletedIds.has(m.id));
     applyFiltersAndSort();
     updateStatsSummary();
   }
@@ -1007,15 +1031,15 @@ async function loadMovies(showLoading = true) {
   // 2. Fetch from API or Cloud and merge safely
   try {
     const data = await apiCall('/api/movies');
-    if (data && Array.isArray(data.movies) && data.movies.length > 0) {
+    if (data && Array.isArray(data.movies)) {
       const movieMap = new Map();
-      // Put API/Cloud movies first
+      // Put API/Cloud movies first, excluding any deleted movies
       data.movies.forEach(m => {
-        if (m && m.id) movieMap.set(m.id, m);
+        if (m && m.id && !deletedIds.has(m.id)) movieMap.set(m.id, m);
       });
       // Put existing local movies on top so locally created/edited ones are never wiped
       STATE.movies.forEach(m => {
-        if (m && m.id) movieMap.set(m.id, m);
+        if (m && m.id && !deletedIds.has(m.id)) movieMap.set(m.id, m);
       });
       STATE.movies = Array.from(movieMap.values());
       saveLocalMovies();
@@ -2090,24 +2114,43 @@ async function deleteMovie(id) {
     return;
   }
 
+  // 1. Record ID in deleted set so it can NEVER be resurrected by sync
+  try {
+    const deletedIds = JSON.parse(localStorage.getItem('cinelog_deleted_movie_ids') || '[]');
+    if (!deletedIds.includes(id)) deletedIds.push(id);
+    localStorage.setItem('cinelog_deleted_movie_ids', JSON.stringify(deletedIds));
+  } catch (e) {}
+
+  // 2. Immediately remove from local state and update UI
+  STATE.movies = STATE.movies.filter(m => m.id !== id);
+  saveLocalMovies();
+  applyFiltersAndSort();
+  updateStatsSummary();
+  closeViewModal();
+  showToast(`فیلم «${title}» از تاریخچه حذف شد.`, 'info');
+
+  // 3. Immediately sync to cloud database
+  try {
+    pushToCloudDatabase({ movies: STATE.movies });
+  } catch (e) {
+    console.warn('Cloud delete sync warning:', e);
+  }
+
+  // 4. Supabase delete if active
   if (supabaseClient && STATE.user) {
     try {
       await supabaseClient.from('movies').delete().eq('id', id);
     } catch (e) {
       console.warn('Supabase delete movie error:', e);
     }
-  } else {
-    try {
-      await apiCall(`/api/movies/${id}`, 'DELETE');
-    } catch (e) {
-      STATE.movies = STATE.movies.filter(m => m.id !== id);
-      saveLocalMovies();
-    }
   }
 
-  showToast(`فیلم «${title}» از تاریخچه حذف شد.`, 'info');
-  closeViewModal();
-  await loadMovies();
+  // 5. Backend server delete call
+  try {
+    await apiCall(`/api/movies/${id}`, 'DELETE');
+  } catch (e) {
+    console.warn('Backend server delete error:', e);
+  }
 }
 
 // ========================================================
@@ -2872,6 +2915,24 @@ function setupEventListeners() {
       if (!confirm('آیا از پاک کردن تمامی فیلم‌های ثبت‌شده مطمئن هستید؟ تمام لیست خالی خواهد شد.')) {
         return;
       }
+      try {
+        const deletedIds = JSON.parse(localStorage.getItem('cinelog_deleted_movie_ids') || '[]');
+        STATE.movies.forEach(m => { if (m?.id && !deletedIds.includes(m.id)) deletedIds.push(m.id); });
+        localStorage.setItem('cinelog_deleted_movie_ids', JSON.stringify(deletedIds));
+      } catch (e) {}
+
+      STATE.movies = [];
+      STATE.filteredMovies = [];
+      saveLocalMovies();
+      renderMovies();
+      updateStatsSummary();
+      showToast('تمامی محتویات و فیلم‌های ثبت‌شده با موفقیت پاک شدند.', 'success');
+      if (DOM.authModal) DOM.authModal.classList.remove('open');
+
+      try {
+        pushToCloudDatabase({ movies: [] });
+      } catch (e) {}
+
       if (supabaseClient && STATE.user) {
         try {
           await supabaseClient.from('movies').delete().eq('user_id', STATE.user.id);
@@ -2881,18 +2942,8 @@ function setupEventListeners() {
       } else {
         try {
           await apiCall('/api/movies', 'DELETE');
-        } catch (e) {
-          localStorage.setItem('cinelog_movies', JSON.stringify([]));
-          localStorage.setItem('cinelog_local_movies', JSON.stringify([]));
-        }
+        } catch (e) {}
       }
-      STATE.movies = [];
-      STATE.filteredMovies = [];
-      saveLocalMovies();
-      renderMovies();
-      updateStatsSummary();
-      showToast('تمامی محتویات و فیلم‌های ثبت‌شده با موفقیت پاک شدند.', 'success');
-      if (DOM.authModal) DOM.authModal.classList.remove('open');
     });
   }
 
