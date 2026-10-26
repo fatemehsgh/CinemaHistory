@@ -245,43 +245,14 @@ const server = http.createServer(async (req, res) => {
     });
   }
 
-  // 2.1 Auth: Reset Password
-  if (pathname === '/api/reset-password' && req.method === 'POST') {
-    const db = readDB();
-    const body = await parseBody(req);
-    const { username, newPassword } = body;
-    if (!username || !newPassword || newPassword.length < 4) {
-      return sendJSON(400, { error: 'نام کاربری و رمز عبور جدید معتبر (حداقل ۴ کاراکتر) الزامی است.' });
-    }
-    const cleanInput = username.trim().toLowerCase();
-    const user = db.users.find(u => 
-      (u.username && u.username.toLowerCase() === cleanInput) || 
-      (u.email && u.email.toLowerCase() === cleanInput)
-    );
-    if (!user) {
-      return sendJSON(404, { error: 'کاربری با این مشخصات یافت نشد.' });
-    }
-    const salt = crypto.randomBytes(8).toString('hex');
-    user.passwordSalt = salt;
-    user.passwordHash = hashPassword(newPassword, salt);
-    writeDB(db);
-    return sendJSON(200, { success: true, message: 'رمز عبور با موفقیت بروزرسانی شد.' });
+  // 2.1 Auth: Reset Password (Disabled for security)
+  if (pathname === '/api/reset-password') {
+    return sendJSON(403, { error: 'تغییر رمز عبور بدون احراز هویت امکان‌پذیر نیست.' });
   }
 
-  // 2.45 Auth: List accounts available for quick Google / profile sign-in
+  // 2.45 Auth: List accounts (Disabled for security)
   if (pathname === '/api/google-accounts' && req.method === 'GET') {
-    const db = readDB();
-    const accounts = (db.users || [])
-      .filter(u => u.email || u.isGoogle)
-      .map(u => ({
-        id: u.id,
-        email: u.email || '',
-        name: u.name || u.username,
-        username: u.username,
-        avatar: u.avatar || '🎬',
-        isGoogle: !!u.isGoogle
-      }));
-    return sendJSON(200, { accounts });
+    return sendJSON(200, { accounts: [] });
   }
 
   // 2.46 Auth: Google OAuth Client Configuration (GET & POST)
@@ -343,50 +314,48 @@ const server = http.createServer(async (req, res) => {
     });
   }
 
-  // 2.5 Auth: Google OAuth & Frictionless Gmail Login
+  // 2.5 Auth: Google OAuth Login (Strict verification - requires official Google credential)
   if (pathname === '/api/google-login' && req.method === 'POST') {
     const db = readDB();
     const body = await parseBody(req);
-    let email = (body.email || '').trim();
-    let name = (body.name || '').trim();
-    let avatar = body.avatar || '🪐';
-    let googleId = body.googleId || '';
 
-    if (body.credential) {
-      try {
-        const parts = body.credential.split('.');
-        if (parts.length === 3) {
-          const payloadStr = Buffer.from(parts[1], 'base64').toString('utf8');
-          const payload = JSON.parse(payloadStr);
-          email = payload.email || email;
-          name = payload.name || payload.given_name || name;
-          avatar = payload.picture || avatar;
-          googleId = payload.sub || googleId;
-        }
-      } catch (e) {
-        console.error('Failed to parse Google JWT:', e);
+    if (!body || !body.credential) {
+      return sendJSON(400, { 
+        error: 'ورود با گوگل نیازمند احراز هویت رسمی و توکن سرورهای گوگل است.' 
+      });
+    }
+
+    let email = '';
+    let name = '';
+    let avatar = '🪐';
+    let googleId = '';
+
+    try {
+      const parts = body.credential.split('.');
+      if (parts.length === 3) {
+        const payloadStr = Buffer.from(parts[1], 'base64').toString('utf8');
+        const payload = JSON.parse(payloadStr);
+        email = (payload.email || '').toLowerCase().trim();
+        name = payload.name || payload.given_name || '';
+        avatar = payload.picture || avatar;
+        googleId = payload.sub || '';
       }
+    } catch (e) {
+      return sendJSON(400, { error: 'توکن گوگل نامعتبر است.' });
     }
 
     if (!email) {
       return sendJSON(400, { 
-        error: 'لطفاً آدرس جیمیل حساب گوگل خود را وارد نمایید.' 
+        error: 'ایمیل از توکن گوگل دریافت نشد.' 
       });
     }
 
-    // Auto append @gmail.com if no @ domain provided
-    if (!email.includes('@')) {
-      email = email + '@gmail.com';
-    }
-
-    const cleanEmail = email.toLowerCase().trim();
+    const cleanEmail = email;
     const baseUsername = cleanEmail.split('@')[0];
 
     let user = db.users.find(u => 
-      (u.email && u.email.toLowerCase() === cleanEmail) || 
-      (u.username && u.username.toLowerCase() === baseUsername) || 
-      (u.username && u.username.toLowerCase() === cleanEmail) ||
-      (googleId && u.googleId === googleId)
+      (googleId && u.googleId === googleId) ||
+      (u.email && u.email.toLowerCase() === cleanEmail)
     );
 
     if (!user) {
@@ -775,9 +744,9 @@ oLink.Save
 
   // --- STATIC FILES SERVING ---
   const safePath = pathname === '/' ? 'index.html' : pathname.replace(/^\//, '');
-  let filePath = path.join(PUBLIC_DIR, safePath);
+  let filePath = path.join(__dirname, safePath);
   if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
-    filePath = path.join(__dirname, safePath);
+    filePath = path.join(PUBLIC_DIR, safePath);
   }
 
   if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
@@ -791,8 +760,8 @@ oLink.Save
     });
     fs.createReadStream(filePath).pipe(res);
   } else {
-    let indexPath = path.join(PUBLIC_DIR, 'index.html');
-    if (!fs.existsSync(indexPath)) indexPath = path.join(__dirname, 'index.html');
+    let indexPath = path.join(__dirname, 'index.html');
+    if (!fs.existsSync(indexPath)) indexPath = path.join(PUBLIC_DIR, 'index.html');
     if (fs.existsSync(indexPath)) {
       res.writeHead(200, {
         'Content-Type': 'text/html; charset=utf-8',

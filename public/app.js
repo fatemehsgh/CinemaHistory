@@ -181,22 +181,6 @@ const DOM = {
   localQrWrapper: document.getElementById('localQrWrapper'),
   localNetworkQrImg: document.getElementById('localNetworkQrImg'),
   btnGoogleLogin: document.getElementById('btnGoogleLogin'),
-  authGoogleView: document.getElementById('authGoogleView'),
-  btnBackFromGoogle: document.getElementById('btnBackFromGoogle'),
-  googleOfficialSection: document.getElementById('googleOfficialSection'),
-  googleOfficialButtonContainer: document.getElementById('googleOfficialButtonContainer'),
-  googleSavedAccountsSection: document.getElementById('googleSavedAccountsSection'),
-  googleSavedAccountsList: document.getElementById('googleSavedAccountsList'),
-  googleDirectForm: document.getElementById('googleDirectForm'),
-  googleDirectEmail: document.getElementById('googleDirectEmail'),
-  googleDirectName: document.getElementById('googleDirectName'),
-  btnSubmitGoogleDirect: document.getElementById('btnSubmitGoogleDirect'),
-  btnToggleGoogleAdvanced: document.getElementById('btnToggleGoogleAdvanced'),
-  googleAdvancedPanel: document.getElementById('googleAdvancedPanel'),
-  googleClientIdInput: document.getElementById('googleClientIdInput'),
-  btnSaveGoogleClientId: document.getElementById('btnSaveGoogleClientId'),
-  btnClearGoogleClientId: document.getElementById('btnClearGoogleClientId'),
-  quickSavedAccountBar: document.getElementById('quickSavedAccountBar'),
 
   // Stats Modal
   statsModal: document.getElementById('statsModal'),
@@ -654,26 +638,9 @@ async function localApiFallback(endpoint, method = 'GET', body = null) {
     return { token, user };
   }
 
-  // POST /api/reset-password
+  // POST /api/reset-password (Disabled for security)
   if (cleanEndpoint === '/api/reset-password' && method === 'POST') {
-    const { username, newPassword } = body || {};
-    await syncCloudDatabase();
-    const cleanUser = (username || '').trim().toLowerCase();
-    const users = JSON.parse(localStorage.getItem('cinelog_users') || '[]');
-    const idx = users.findIndex(u => 
-      (u.username && u.username.toLowerCase() === cleanUser) ||
-      (u.email && u.email.toLowerCase() === cleanUser)
-    );
-    if (idx === -1) {
-      throw new Error('کاربر یافت نشد.');
-    }
-    const salt = Math.random().toString(36).substring(2, 10);
-    users[idx].passwordSalt = salt;
-    users[idx].passwordHash = await sha256Hex(newPassword + salt);
-    delete users[idx].password;
-    localStorage.setItem('cinelog_users', JSON.stringify(users));
-    pushToCloudDatabase({ users });
-    return { success: true };
+    throw new Error('تغییر رمز عبور بدون احراز هویت امکان‌پذیر نیست.');
   }
 
   // POST /api/register
@@ -825,33 +792,9 @@ async function localApiFallback(endpoint, method = 'GET', body = null) {
     return { success: true };
   }
 
-  // GET /api/google-accounts
+  // GET /api/google-accounts (Disabled for security)
   if (cleanEndpoint === '/api/google-accounts') {
-    await syncCloudDatabase();
-    const users = JSON.parse(localStorage.getItem('cinelog_users') || '[]');
-    let accounts = users
-      .filter(u => u.email || u.isGoogle)
-      .map(u => ({
-        id: u.id,
-        email: u.email || '',
-        name: u.name || u.username,
-        username: u.username,
-        avatar: u.avatar || '🪐',
-        isGoogle: !!u.isGoogle
-      }));
-    if (accounts.length === 0) {
-      accounts = [
-        {
-          id: 'user-fatemehsgh',
-          email: 'fatemeh.sgh65@gmail.com',
-          name: 'fatemeh',
-          username: 'fatemehsgh',
-          avatar: '🪐',
-          isGoogle: true
-        }
-      ];
-    }
-    return { accounts };
+    return { accounts: [] };
   }
 
   // GET /api/google-config
@@ -859,40 +802,40 @@ async function localApiFallback(endpoint, method = 'GET', body = null) {
     return { clientId: '' };
   }
 
-  // POST /api/google-login
+  // POST /api/google-login (Strictly requires official Google credential token)
   if (cleanEndpoint === '/api/google-login') {
-    await syncCloudDatabase();
-    const users = JSON.parse(localStorage.getItem('cinelog_users') || '[]');
-    let email = (body?.email || '').trim().toLowerCase();
-    let name = (body?.name || '').trim();
-    let avatar = body?.avatar || '🪐';
+    if (!body || !body.credential) {
+      throw new Error('ورود با گوگل نیازمند احراز هویت رسمی و توکن سرورهای گوگل است.');
+    }
 
-    // Parse credential JWT if provided
-    if (body?.credential) {
-      try {
-        const parts = body.credential.split('.');
-        if (parts.length === 3) {
-          const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
-          email = (payload.email || email).toLowerCase();
-          name = payload.name || payload.given_name || name;
-          avatar = payload.picture || avatar;
-        }
-      } catch (e) {}
+    let email = '';
+    let name = '';
+    let avatar = '🪐';
+    let googleId = '';
+
+    try {
+      const parts = body.credential.split('.');
+      if (parts.length === 3) {
+        const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
+        email = (payload.email || '').toLowerCase().trim();
+        name = payload.name || payload.given_name || '';
+        avatar = payload.picture || avatar;
+        googleId = payload.sub || '';
+      }
+    } catch (e) {
+      throw new Error('توکن گوگل نامعتبر است.');
     }
 
     if (!email) {
-      throw new Error('لطفاً آدرس جیمیل را وارد کنید.');
-    }
-    if (!email.includes('@')) {
-      email = email + '@gmail.com';
+      throw new Error('ایمیل از توکن گوگل دریافت نشد.');
     }
 
+    await syncCloudDatabase();
+    const users = JSON.parse(localStorage.getItem('cinelog_users') || '[]');
     const baseUsername = email.split('@')[0];
     let user = users.find(u => 
-      (u.email && u.email.toLowerCase() === email) ||
-      (u.username && u.username.toLowerCase() === baseUsername) ||
-      (u.username && u.username.toLowerCase() === email) ||
-      (u.username && u.username.toLowerCase() === 'fatemehsgh' && email.includes('fatemeh'))
+      (googleId && u.googleId === googleId) ||
+      (u.email && u.email.toLowerCase() === email)
     );
 
     if (!user) {
@@ -902,6 +845,7 @@ async function localApiFallback(endpoint, method = 'GET', body = null) {
         username: baseUsername,
         email: email,
         avatar: avatar,
+        googleId: googleId,
         isGoogle: true,
         bio: 'ورود با حساب گوگل 🎬',
         createdAt: new Date().toISOString()
@@ -909,6 +853,7 @@ async function localApiFallback(endpoint, method = 'GET', body = null) {
       users.push(user);
     } else {
       user.isGoogle = true;
+      if (googleId && !user.googleId) user.googleId = googleId;
       if (!user.email) user.email = email;
       if (name && (!user.name || user.name === user.username)) user.name = name;
     }
@@ -996,13 +941,11 @@ function updateUserUI() {
 
     DOM.authLoggedInView.style.display = 'block';
     DOM.authFormView.style.display = 'none';
-    if (DOM.authGoogleView) DOM.authGoogleView.style.display = 'none';
   } else {
     DOM.navUserName.textContent = 'ورود / ثبت‌نام';
     DOM.navUserAvatar.textContent = '👤';
     DOM.authLoggedInView.style.display = 'none';
     DOM.authFormView.style.display = 'block';
-    if (DOM.authGoogleView) DOM.authGoogleView.style.display = 'none';
   }
 }
 
@@ -2157,92 +2100,10 @@ async function deleteMovie(id) {
 // AUTH MODAL
 // ========================================================
 function setupAuthModal() {
-  async function loginWithGoogleAccount(email, name = '') {
-    try {
-      showToast('در حال ورود به حساب کاربری...', 'info');
-      const data = await apiCall('/api/google-login', 'POST', { email, name });
-      STATE.token = data.token;
-      STATE.user = data.user;
-      localStorage.setItem('cinelog_token', data.token);
-      localStorage.setItem('cinelog_user', JSON.stringify(data.user));
-      updateUserUI();
-      DOM.authModal.classList.remove('open');
-      showToast(`خوش آمدید، ${STATE.user.name || STATE.user.username}! 🎬 تمام اطلاعات هماهنگ شد.`, 'success');
-      await loadMovies();
-    } catch (err) {
-      showToast(err.message || 'خطا در ورود با گوگل', 'error');
-    }
-  }
-
-  async function loadQuickSavedAccount() {
-    if (!DOM.quickSavedAccountBar) return;
-    try {
-      const data = await apiCall('/api/google-accounts');
-      const accounts = data.accounts || [];
-      if (accounts.length > 0) {
-        const primary = accounts[0];
-        DOM.quickSavedAccountBar.style.display = 'block';
-        DOM.quickSavedAccountBar.innerHTML = `
-          <button type="button" class="quick-account-btn full-width" id="btnQuickAccountLogin">
-            <span class="quick-account-avatar">${primary.avatar || '🪐'}</span>
-            <div class="quick-account-text">
-              <span class="quick-account-title">ورود مستقیم: <strong>${escapeHTML(primary.name || primary.username)}</strong></span>
-              <span class="quick-account-email">${escapeHTML(primary.email || primary.username)}</span>
-            </div>
-            <span class="quick-account-badge">ورود سریع با ۱ کلیک ➔</span>
-          </button>
-        `;
-        document.getElementById('btnQuickAccountLogin')?.addEventListener('click', () => {
-          loginWithGoogleAccount(primary.email || primary.username, primary.name);
-        });
-      } else {
-        DOM.quickSavedAccountBar.style.display = 'none';
-      }
-    } catch (e) {
-      if (DOM.quickSavedAccountBar) DOM.quickSavedAccountBar.style.display = 'none';
-    }
-  }
-
-  async function loadSavedGoogleAccounts() {
-    if (!DOM.googleSavedAccountsList) return;
-    try {
-      const data = await apiCall('/api/google-accounts');
-      const accounts = data.accounts || [];
-      if (accounts.length > 0) {
-        if (DOM.googleSavedAccountsSection) DOM.googleSavedAccountsSection.style.display = 'block';
-        DOM.googleSavedAccountsList.innerHTML = accounts.map(acc => `
-          <div class="google-account-card" data-email="${escapeHTML(acc.email || acc.username)}" data-name="${escapeHTML(acc.name || acc.username)}">
-            <div class="google-account-user-info">
-              <span class="google-account-avatar">${acc.avatar || '🪐'}</span>
-              <div class="google-account-details">
-                <span class="google-account-name">${escapeHTML(acc.name || acc.username)}</span>
-                <span class="google-account-email">${escapeHTML(acc.email || acc.username)}</span>
-              </div>
-            </div>
-            <span class="google-account-btn-badge">ورود فوری ➔</span>
-          </div>
-        `).join('');
-
-        DOM.googleSavedAccountsList.querySelectorAll('.google-account-card').forEach(card => {
-          card.addEventListener('click', () => {
-            const email = card.dataset.email;
-            const name = card.dataset.name;
-            loginWithGoogleAccount(email, name);
-          });
-        });
-      } else {
-        if (DOM.googleSavedAccountsSection) DOM.googleSavedAccountsSection.style.display = 'none';
-      }
-    } catch (e) {
-      if (DOM.googleSavedAccountsSection) DOM.googleSavedAccountsSection.style.display = 'none';
-    }
-  }
-
   const handleOpenAuthModal = (e) => {
     if (e) e.preventDefault();
     updateUserUI();
     updateCloudStatusUI();
-    loadQuickSavedAccount();
     DOM.authModal.classList.add('open');
   };
 
@@ -2361,43 +2222,12 @@ function setupAuthModal() {
       STATE.user = data.user;
       localStorage.setItem('cinelog_token', data.token);
       localStorage.setItem('cinelog_user', JSON.stringify(data.user));
-      const existingResetBtn = document.getElementById('btnQuickResetPass');
-      if (existingResetBtn) existingResetBtn.remove();
       updateUserUI();
       DOM.authModal.classList.remove('open');
       showToast(`خوش آمدید، ${STATE.user.name || STATE.user.username}! 🎬`, 'success');
       await loadMovies();
     } catch (err) {
       showToast(err.message || 'نام کاربری یا رمز عبور اشتباه است.', 'error');
-      if (err.message && err.message.includes('رمز عبور')) {
-        let resetBtn = document.getElementById('btnQuickResetPass');
-        if (!resetBtn) {
-          resetBtn = document.createElement('button');
-          resetBtn.id = 'btnQuickResetPass';
-          resetBtn.type = 'button';
-          resetBtn.className = 'btn btn-secondary full-width';
-          resetBtn.style.marginTop = '12px';
-          resetBtn.textContent = '🔑 ذخیره این رمز عبور به عنوان رمز جدید حساب من';
-          resetBtn.onclick = async () => {
-            try {
-              await apiCall('/api/reset-password', 'POST', { username, newPassword: password });
-              showToast('رمز عبور جدید با موفقیت ذخیره شد! در حال ورود...', 'success');
-              const res = await apiCall('/api/login', 'POST', { username, password });
-              STATE.token = res.token;
-              STATE.user = res.user;
-              localStorage.setItem('cinelog_token', res.token);
-              localStorage.setItem('cinelog_user', JSON.stringify(res.user));
-              resetBtn.remove();
-              updateUserUI();
-              DOM.authModal.classList.remove('open');
-              await loadMovies();
-            } catch (e2) {
-              showToast(e2.message || 'خطا در ثبت رمز عبور جدید.', 'error');
-            }
-          };
-          DOM.loginForm.appendChild(resetBtn);
-        }
-      }
     }
   });
 
@@ -2500,32 +2330,33 @@ function setupAuthModal() {
   DOM.btnSwitchAccount.addEventListener('click', () => {
     DOM.authLoggedInView.style.display = 'none';
     DOM.authFormView.style.display = 'block';
-    if (DOM.authGoogleView) DOM.authGoogleView.style.display = 'none';
-    loadQuickSavedAccount();
   });
 
-  DOM.btnGoogleLogin?.addEventListener('click', () => {
-    DOM.authFormView.style.display = 'none';
-    if (DOM.authGoogleView) {
-      DOM.authGoogleView.style.display = 'block';
-      loadSavedGoogleAccounts();
+  DOM.btnGoogleLogin?.addEventListener('click', async () => {
+    if (supabaseClient) {
+      try {
+        const { error } = await supabaseClient.auth.signInWithOAuth({
+          provider: 'google',
+          options: {
+            redirectTo: window.location.origin + window.location.pathname
+          }
+        });
+        if (error) throw error;
+        return;
+      } catch (err) {
+        showToast(err.message || 'خطا در اتصال به حساب گوگل', 'error');
+        return;
+      }
     }
-  });
 
-  DOM.btnBackFromGoogle?.addEventListener('click', () => {
-    if (DOM.authGoogleView) DOM.authGoogleView.style.display = 'none';
-    DOM.authFormView.style.display = 'block';
-    loadQuickSavedAccount();
-  });
-
-  DOM.googleDirectForm?.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const email = (DOM.googleDirectEmail?.value || '').trim();
-    if (!email) {
-      showToast('لطفاً آدرس جیمیل را وارد کنید.', 'error');
-      return;
+    if (window.google?.accounts?.id) {
+      try {
+        window.google.accounts.id.prompt();
+        return;
+      } catch (e) {}
     }
-    await loginWithGoogleAccount(email);
+
+    showToast('برای ورود، لطفاً نام کاربری/ایمیل و رمز عبور خود را وارد کنید یا در تب ثبت‌نام حساب بسازید.', 'info');
   });
 
   DOM.btnLogout.addEventListener('click', async () => {
