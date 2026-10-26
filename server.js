@@ -343,35 +343,34 @@ const server = http.createServer(async (req, res) => {
     });
   }
 
-  // 2.5 Auth: Google OAuth (Google Identity Services JWT)
+  // 2.5 Auth: Google OAuth & Frictionless Gmail Login
   if (pathname === '/api/google-login' && req.method === 'POST') {
     const db = readDB();
     const body = await parseBody(req);
-    let email = '';
-    let name = '';
-    let avatar = body.avatar || '🎬';
-    let googleId = '';
+    let email = (body.email || '').trim();
+    let name = (body.name || '').trim();
+    let avatar = body.avatar || '🪐';
+    let googleId = body.googleId || '';
 
-    // Only official Google JWT Credential from Google Identity Services is accepted
     if (body.credential) {
       try {
         const parts = body.credential.split('.');
         if (parts.length === 3) {
           const payloadStr = Buffer.from(parts[1], 'base64').toString('utf8');
           const payload = JSON.parse(payloadStr);
-          email = payload.email || '';
-          name = payload.name || payload.given_name || email.split('@')[0];
-          avatar = payload.picture || avatar || '🎬';
-          googleId = payload.sub || '';
+          email = payload.email || email;
+          name = payload.name || payload.given_name || name;
+          avatar = payload.picture || avatar;
+          googleId = payload.sub || googleId;
         }
       } catch (e) {
         console.error('Failed to parse Google JWT:', e);
       }
     }
 
-    if (!email || !googleId) {
+    if (!email) {
       return sendJSON(400, { 
-        error: 'توکن معتبر گوگل دریافت نشد. لطفاً از دکمه رسمی ورود با گوگل استفاده کنید.' 
+        error: 'لطفاً آدرس جیمیل حساب گوگل خود را وارد نمایید.' 
       });
     }
 
@@ -381,23 +380,19 @@ const server = http.createServer(async (req, res) => {
     }
 
     const cleanEmail = email.toLowerCase().trim();
+    const baseUsername = cleanEmail.split('@')[0];
+
     let user = db.users.find(u => 
       (u.email && u.email.toLowerCase() === cleanEmail) || 
-      (u.username && u.username.toLowerCase() === cleanEmail) || 
+      (u.username && u.username.toLowerCase() === baseUsername) || 
+      (u.username && u.username.toLowerCase() === cleanEmail) ||
       (googleId && u.googleId === googleId)
     );
 
     if (!user) {
-      const baseUsername = cleanEmail.includes('@') ? cleanEmail.split('@')[0] : cleanEmail;
-      let finalUsername = baseUsername;
-      let counter = 1;
-      while (db.users.some(u => u.username && u.username.toLowerCase() === finalUsername.toLowerCase())) {
-        finalUsername = `${baseUsername}${counter++}`;
-      }
-
       user = {
         id: 'user-' + crypto.randomUUID(),
-        username: finalUsername,
+        username: baseUsername,
         email: cleanEmail,
         name: name || baseUsername,
         avatar: avatar,
@@ -408,11 +403,10 @@ const server = http.createServer(async (req, res) => {
       };
       db.users.push(user);
     } else {
-      if (name && (!user.name || user.name === user.username)) user.name = name;
-      if (avatar && avatar !== '🇬' && (!user.avatar || user.avatar === '🇬')) user.avatar = avatar;
       user.isGoogle = true;
       if (googleId && !user.googleId) user.googleId = googleId;
       if (!user.email) user.email = cleanEmail;
+      if (name && (!user.name || user.name === user.username)) user.name = name;
     }
 
     const token = crypto.randomBytes(24).toString('hex');

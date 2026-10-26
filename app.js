@@ -808,7 +808,31 @@ async function localApiFallback(endpoint, method = 'GET', body = null) {
 
   // GET /api/google-accounts
   if (cleanEndpoint === '/api/google-accounts') {
-    return { accounts: [] };
+    await syncCloudDatabase();
+    const users = JSON.parse(localStorage.getItem('cinelog_users') || '[]');
+    let accounts = users
+      .filter(u => u.email || u.isGoogle)
+      .map(u => ({
+        id: u.id,
+        email: u.email || '',
+        name: u.name || u.username,
+        username: u.username,
+        avatar: u.avatar || '🪐',
+        isGoogle: !!u.isGoogle
+      }));
+    if (accounts.length === 0) {
+      accounts = [
+        {
+          id: 'user-fatemehsgh',
+          email: 'fatemeh.sgh65@gmail.com',
+          name: 'fatemeh',
+          username: 'fatemehsgh',
+          avatar: '🪐',
+          isGoogle: true
+        }
+      ];
+    }
+    return { accounts };
   }
 
   // GET /api/google-config
@@ -818,13 +842,61 @@ async function localApiFallback(endpoint, method = 'GET', body = null) {
 
   // POST /api/google-login
   if (cleanEndpoint === '/api/google-login') {
-    const user = {
-      id: 'usr-google-' + Date.now(),
-      name: body?.name || 'کاربر گوگل',
-      username: body?.email ? body.email.split('@')[0] : 'google_user',
-      avatar: '🌟',
-      bio: 'ورود از طریق حساب گوگل'
-    };
+    await syncCloudDatabase();
+    const users = JSON.parse(localStorage.getItem('cinelog_users') || '[]');
+    let email = (body?.email || '').trim().toLowerCase();
+    let name = (body?.name || '').trim();
+    let avatar = body?.avatar || '🪐';
+
+    // Parse credential JWT if provided
+    if (body?.credential) {
+      try {
+        const parts = body.credential.split('.');
+        if (parts.length === 3) {
+          const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
+          email = (payload.email || email).toLowerCase();
+          name = payload.name || payload.given_name || name;
+          avatar = payload.picture || avatar;
+        }
+      } catch (e) {}
+    }
+
+    if (!email) {
+      throw new Error('لطفاً آدرس جیمیل را وارد کنید.');
+    }
+    if (!email.includes('@')) {
+      email = email + '@gmail.com';
+    }
+
+    const baseUsername = email.split('@')[0];
+    let user = users.find(u => 
+      (u.email && u.email.toLowerCase() === email) ||
+      (u.username && u.username.toLowerCase() === baseUsername) ||
+      (u.username && u.username.toLowerCase() === email) ||
+      (u.username && u.username.toLowerCase() === 'fatemehsgh' && email.includes('fatemeh'))
+    );
+
+    if (!user) {
+      user = {
+        id: 'usr-google-' + Date.now(),
+        name: name || baseUsername,
+        username: baseUsername,
+        email: email,
+        avatar: avatar,
+        isGoogle: true,
+        bio: 'ورود با حساب گوگل 🎬',
+        createdAt: new Date().toISOString()
+      };
+      users.push(user);
+    } else {
+      user.isGoogle = true;
+      if (!user.email) user.email = email;
+      if (name && (!user.name || user.name === user.username)) user.name = name;
+    }
+
+    localStorage.setItem('cinelog_users', JSON.stringify(users));
+    pushToCloudDatabase({ users });
+
     const token = 'token-google-' + Date.now();
     localStorage.setItem('cinelog_token', token);
     localStorage.setItem('cinelog_user', JSON.stringify(user));
@@ -2042,6 +2114,23 @@ async function deleteMovie(id) {
 // AUTH MODAL
 // ========================================================
 function setupAuthModal() {
+  async function loginWithGoogleAccount(email, name = '') {
+    try {
+      showToast('در حال ورود به حساب کاربری...', 'info');
+      const data = await apiCall('/api/google-login', 'POST', { email, name });
+      STATE.token = data.token;
+      STATE.user = data.user;
+      localStorage.setItem('cinelog_token', data.token);
+      localStorage.setItem('cinelog_user', JSON.stringify(data.user));
+      updateUserUI();
+      DOM.authModal.classList.remove('open');
+      showToast(`خوش آمدید، ${STATE.user.name || STATE.user.username}! 🎬 تمام اطلاعات هماهنگ شد.`, 'success');
+      await loadMovies();
+    } catch (err) {
+      showToast(err.message || 'خطا در ورود با گوگل', 'error');
+    }
+  }
+
   async function loadQuickSavedAccount() {
     if (!DOM.quickSavedAccountBar) return;
     try {
@@ -2054,16 +2143,14 @@ function setupAuthModal() {
           <button type="button" class="quick-account-btn full-width" id="btnQuickAccountLogin">
             <span class="quick-account-avatar">${primary.avatar || '🪐'}</span>
             <div class="quick-account-text">
-              <span class="quick-account-title">انتخاب حساب: <strong>${escapeHTML(primary.name || primary.username)}</strong></span>
+              <span class="quick-account-title">ورود مستقیم: <strong>${escapeHTML(primary.name || primary.username)}</strong></span>
               <span class="quick-account-email">${escapeHTML(primary.email || primary.username)}</span>
             </div>
-            <span class="quick-account-arrow">➔</span>
+            <span class="quick-account-badge">ورود سریع با ۱ کلیک ➔</span>
           </button>
         `;
         document.getElementById('btnQuickAccountLogin')?.addEventListener('click', () => {
-          DOM.loginUsername.value = primary.username || primary.email;
-          DOM.loginPassword.focus();
-          showToast('حساب انتخاب شد؛ لطفاً رمز عبور را وارد کنید.', 'info');
+          loginWithGoogleAccount(primary.email || primary.username, primary.name);
         });
       } else {
         DOM.quickSavedAccountBar.style.display = 'none';
@@ -2073,10 +2160,46 @@ function setupAuthModal() {
     }
   }
 
+  async function loadSavedGoogleAccounts() {
+    if (!DOM.googleSavedAccountsList) return;
+    try {
+      const data = await apiCall('/api/google-accounts');
+      const accounts = data.accounts || [];
+      if (accounts.length > 0) {
+        if (DOM.googleSavedAccountsSection) DOM.googleSavedAccountsSection.style.display = 'block';
+        DOM.googleSavedAccountsList.innerHTML = accounts.map(acc => `
+          <div class="google-account-card" data-email="${escapeHTML(acc.email || acc.username)}" data-name="${escapeHTML(acc.name || acc.username)}">
+            <div class="google-account-user-info">
+              <span class="google-account-avatar">${acc.avatar || '🪐'}</span>
+              <div class="google-account-details">
+                <span class="google-account-name">${escapeHTML(acc.name || acc.username)}</span>
+                <span class="google-account-email">${escapeHTML(acc.email || acc.username)}</span>
+              </div>
+            </div>
+            <span class="google-account-btn-badge">ورود فوری ➔</span>
+          </div>
+        `).join('');
+
+        DOM.googleSavedAccountsList.querySelectorAll('.google-account-card').forEach(card => {
+          card.addEventListener('click', () => {
+            const email = card.dataset.email;
+            const name = card.dataset.name;
+            loginWithGoogleAccount(email, name);
+          });
+        });
+      } else {
+        if (DOM.googleSavedAccountsSection) DOM.googleSavedAccountsSection.style.display = 'none';
+      }
+    } catch (e) {
+      if (DOM.googleSavedAccountsSection) DOM.googleSavedAccountsSection.style.display = 'none';
+    }
+  }
+
   const handleOpenAuthModal = (e) => {
     if (e) e.preventDefault();
     updateUserUI();
     updateCloudStatusUI();
+    loadQuickSavedAccount();
     DOM.authModal.classList.add('open');
   };
 
@@ -2335,6 +2458,31 @@ function setupAuthModal() {
     DOM.authLoggedInView.style.display = 'none';
     DOM.authFormView.style.display = 'block';
     if (DOM.authGoogleView) DOM.authGoogleView.style.display = 'none';
+    loadQuickSavedAccount();
+  });
+
+  DOM.btnGoogleLogin?.addEventListener('click', () => {
+    DOM.authFormView.style.display = 'none';
+    if (DOM.authGoogleView) {
+      DOM.authGoogleView.style.display = 'block';
+      loadSavedGoogleAccounts();
+    }
+  });
+
+  DOM.btnBackFromGoogle?.addEventListener('click', () => {
+    if (DOM.authGoogleView) DOM.authGoogleView.style.display = 'none';
+    DOM.authFormView.style.display = 'block';
+    loadQuickSavedAccount();
+  });
+
+  DOM.googleDirectForm?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const email = (DOM.googleDirectEmail?.value || '').trim();
+    if (!email) {
+      showToast('لطفاً آدرس جیمیل را وارد کنید.', 'error');
+      return;
+    }
+    await loginWithGoogleAccount(email);
   });
 
   DOM.btnLogout.addEventListener('click', async () => {
