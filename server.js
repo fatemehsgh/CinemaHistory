@@ -507,26 +507,28 @@ oLink.Save
   if (pathname === '/api/movies' && req.method === 'GET') {
     const db = readDB();
     const user = getAuthUser(req, db);
-    if (!user) return sendJSON(401, { error: 'عدم دسترسی' });
-
-    let userMovies = db.movies.filter(m => m.userId === user.id);
-    return sendJSON(200, { movies: userMovies });
+    let movies = db.movies || [];
+    if (user) {
+      const userMovies = movies.filter(m => !m.userId || m.userId === user.id);
+      if (userMovies.length > 0) {
+        movies = userMovies;
+      }
+    }
+    return sendJSON(200, { movies });
   }
 
   // 7. Movies: Create
   if (pathname === '/api/movies' && req.method === 'POST') {
     const db = readDB();
     const user = getAuthUser(req, db);
-    if (!user) return sendJSON(401, { error: 'عدم دسترسی' });
-
     const body = await parseBody(req);
     if (!body.title || !body.title.trim()) {
       return sendJSON(400, { error: 'نام فیلم الزامی است.' });
     }
 
     const newMovie = {
-      id: 'mov-' + crypto.randomUUID(),
-      userId: user.id,
+      id: body.id || ('mov-' + crypto.randomUUID()),
+      userId: user ? user.id : (db.users[0]?.id || 'user-default'),
       title: body.title.trim(),
       mediaType: body.mediaType === 'series' ? 'series' : 'movie',
       releaseYear: parseInt(body.releaseYear) || new Date().getFullYear(),
@@ -537,10 +539,15 @@ oLink.Save
       review: body.review?.trim() || '',
       poster: body.poster?.trim() || 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=600&q=80',
       isFavorite: !!body.isFavorite,
-      createdAt: new Date().toISOString()
+      createdAt: body.createdAt || new Date().toISOString()
     };
 
-    db.movies.unshift(newMovie);
+    const existingIdx = db.movies.findIndex(m => m.id === newMovie.id);
+    if (existingIdx !== -1) {
+      db.movies[existingIdx] = newMovie;
+    } else {
+      db.movies.unshift(newMovie);
+    }
     writeDB(db);
 
     return sendJSON(201, { movie: newMovie });

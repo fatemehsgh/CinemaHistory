@@ -43,5 +43,21 @@
       "createdAt": 1792836300223
     }
   },
-  "movies": []
+  "movies": [
+    {
+      "id": "mov-1",
+      "title": "تلقین (Inception)",
+      "releaseYear": 2010,
+      "watchYear": 1403,
+      "mediaType": "movie",
+      "rating": 9,
+      "genres": [
+        "علمی‌تخیلی",
+        "اکشن"
+      ],
+      "synopsis": "دام کاب یک سارق حرفه‌ای است که با نفوذ به ناخودآگاه افراد در حین خواب، عمیق‌ترین اسرار آنها را می‌دزدد.",
+      "isFavorite": true,
+      "createdAt": "2026-10-26T10:07:19.043Z"
+    }
+  ]
 }

@@ -721,34 +721,54 @@ async function localApiFallback(endpoint, method = 'GET', body = null) {
 
   // GET /api/movies
   if (cleanEndpoint === '/api/movies' && method === 'GET') {
+    let localMovies = [];
+    try {
+      localMovies = JSON.parse(localStorage.getItem('cinelog_movies') || localStorage.getItem('cinelog_local_movies') || '[]');
+    } catch (e) {}
+
     try {
       const res = await fetch(`${CLOUD_DATABASE_URL}?v=${Date.now()}`);
       if (res.ok) {
         const data = await res.json();
-        if (Array.isArray(data.movies)) {
-          localStorage.setItem('cinelog_movies', JSON.stringify(data.movies));
-          localStorage.setItem('cinelog_local_movies', JSON.stringify(data.movies));
-          return { movies: data.movies };
+        if (Array.isArray(data.movies) && data.movies.length > 0) {
+          const map = new Map();
+          data.movies.forEach(m => { if (m?.id) map.set(m.id, m); });
+          localMovies.forEach(m => { if (m?.id) map.set(m.id, m); });
+          const merged = Array.from(map.values());
+          localStorage.setItem('cinelog_movies', JSON.stringify(merged));
+          localStorage.setItem('cinelog_local_movies', JSON.stringify(merged));
+          return { movies: merged };
         }
       }
     } catch (e) {}
-    let movies = JSON.parse(localStorage.getItem('cinelog_movies') || '[]');
-    return { movies };
+
+    return { movies: localMovies };
   }
 
   // POST /api/movies
   if (cleanEndpoint === '/api/movies' && method === 'POST') {
-    const movies = JSON.parse(localStorage.getItem('cinelog_movies') || '[]');
+    let movies = [];
+    try {
+      movies = JSON.parse(localStorage.getItem('cinelog_movies') || localStorage.getItem('cinelog_local_movies') || '[]');
+    } catch (e) {}
+
     const newMovie = {
-      id: 'mov-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
+      id: body?.id || ('mov-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6)),
       userId: STATE.user?.id || 'usr-1',
       ...body,
-      createdAt: new Date().toISOString()
+      createdAt: body?.createdAt || new Date().toISOString()
     };
-    movies.unshift(newMovie);
+
+    const existingIdx = movies.findIndex(m => m.id === newMovie.id);
+    if (existingIdx !== -1) {
+      movies[existingIdx] = newMovie;
+    } else {
+      movies.unshift(newMovie);
+    }
+
     localStorage.setItem('cinelog_movies', JSON.stringify(movies));
     localStorage.setItem('cinelog_local_movies', JSON.stringify(movies));
-    pushToCloudDatabase({ movies });
+    await pushToCloudDatabase({ movies });
     return { success: true, movie: newMovie };
   }
 
@@ -899,46 +919,44 @@ function updateUserUI() {
 // MOVIES DATA
 // ========================================================
 async function loadMovies(showLoading = true) {
-  if (!STATE.user) {
-    STATE.movies = [];
+  // 1. First, always display existing local movies immediately
+  let localMovies = [];
+  try {
+    const raw = localStorage.getItem('cinelog_movies') || localStorage.getItem('cinelog_local_movies');
+    if (raw) localMovies = JSON.parse(raw);
+  } catch (e) {}
+
+  if (Array.isArray(localMovies) && localMovies.length > 0) {
+    STATE.movies = localMovies;
     applyFiltersAndSort();
     updateStatsSummary();
-    return;
   }
 
-  if (supabaseClient) {
-    try {
-      const { data, error } = await supabaseClient
-        .from('movies')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (!error && Array.isArray(data)) {
-        STATE.movies = data.map(movieFromDb);
-        applyFiltersAndSort();
-        updateStatsSummary();
-        return;
-      } else if (error) {
-        console.warn('Supabase fetch movies error:', error);
-      }
-    } catch (e) {
-      console.warn('Supabase loadMovies exception:', e);
-    }
-  }
-
+  // 2. Fetch from API or Cloud and merge safely
   try {
     const data = await apiCall('/api/movies');
-    STATE.movies = data.movies || [];
-    applyFiltersAndSort();
-    updateStatsSummary();
+    if (data && Array.isArray(data.movies) && data.movies.length > 0) {
+      const movieMap = new Map();
+      // Put API/Cloud movies first
+      data.movies.forEach(m => {
+        if (m && m.id) movieMap.set(m.id, m);
+      });
+      // Put existing local movies on top so locally created/edited ones are never wiped
+      STATE.movies.forEach(m => {
+        if (m && m.id) movieMap.set(m.id, m);
+      });
+      STATE.movies = Array.from(movieMap.values());
+      saveLocalMovies();
+      applyFiltersAndSort();
+      updateStatsSummary();
+    }
   } catch (e) {
-    STATE.movies = JSON.parse(localStorage.getItem('cinelog_local_movies') || '[]');
-    applyFiltersAndSort();
-    updateStatsSummary();
+    console.warn('Network movie load error (using local cache):', e);
   }
 }
 
 function saveLocalMovies() {
+  localStorage.setItem('cinelog_movies', JSON.stringify(STATE.movies));
   localStorage.setItem('cinelog_local_movies', JSON.stringify(STATE.movies));
 }
 
@@ -1890,63 +1908,36 @@ async function handleMovieFormSubmit(e) {
   try {
     if (STATE.isEditMode) {
       const id = DOM.editMovieId.value;
-      if (supabaseClient && STATE.user) {
-        const dbUpdate = {
-          title: payload.title,
-          release_year: payload.releaseYear,
-          watch_year: payload.watchYear,
-          media_type: payload.mediaType,
-          synopsis: payload.synopsis,
-          genres: payload.genres,
-          rating: payload.rating,
-          poster: payload.poster,
-          review: payload.review,
-          is_favorite: payload.isFavorite,
-          updated_at: new Date().toISOString()
-        };
-        const { error } = await supabaseClient.from('movies').update(dbUpdate).eq('id', id);
-        if (error) throw new Error('خطا در ویرایش ابری: ' + error.message);
-        const idx = STATE.movies.findIndex(m => m.id === id);
-        if (idx !== -1) {
-          STATE.movies[idx] = { ...STATE.movies[idx], ...payload };
-        }
-      } else {
-        try {
-          await apiCall(`/api/movies/${id}`, 'PUT', payload);
-        } catch (err) {
-          const idx = STATE.movies.findIndex(m => m.id === id);
-          if (idx !== -1) {
-            STATE.movies[idx] = { ...STATE.movies[idx], ...payload };
-            saveLocalMovies();
-          }
-        }
+      const idx = STATE.movies.findIndex(m => m.id === id);
+      if (idx !== -1) {
+        STATE.movies[idx] = { ...STATE.movies[idx], ...payload, updatedAt: new Date().toISOString() };
       }
+      saveLocalMovies();
+      applyFiltersAndSort();
+      updateStatsSummary();
+      closeMovieModal();
       showToast('مشخصات فیلم با موفقیت ویرایش شد.', 'success');
-    } else {
-      if (supabaseClient && STATE.user) {
-        const row = movieToDb(payload, STATE.user.id);
-        const { error } = await supabaseClient.from('movies').insert(row);
-        if (error) throw new Error('خطا در ذخیره ابری: ' + error.message);
-        STATE.movies.unshift(movieFromDb(row));
-      } else {
-        try {
-          await apiCall('/api/movies', 'POST', payload);
-        } catch (err) {
-          const newMovie = {
-            id: 'mov-local-' + Date.now(),
-            userId: STATE.user?.id || 'local-1',
-            ...payload,
-            createdAt: new Date().toISOString()
-          };
-          STATE.movies.unshift(newMovie);
-          saveLocalMovies();
-        }
-      }
-      showToast(`فیلم «${title}» با موفقیت در تاریخچه ذخیره شد!`, 'success');
-    }
 
-    closeMovieModal();
-    await loadMovies();
+      apiCall(`/api/movies/${id}`, 'PUT', payload).catch(e => console.warn(e));
+      pushToCloudDatabase({ movies: STATE.movies }).catch(e => console.warn(e));
+    } else {
+      const movieObj = {
+        id: 'mov-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
+        userId: STATE.user?.id || 'usr-1',
+        ...payload,
+        createdAt: new Date().toISOString()
+      };
+
+      STATE.movies.unshift(movieObj);
+      saveLocalMovies();
+      applyFiltersAndSort();
+      updateStatsSummary();
+      closeMovieModal();
+      showToast(`فیلم «${title}» با موفقیت در تاریخچه ذخیره شد!`, 'success');
+
+      apiCall('/api/movies', 'POST', movieObj).catch(e => console.warn(e));
+      pushToCloudDatabase({ movies: STATE.movies }).catch(e => console.warn(e));
+    }
   } catch (error) {
     showToast(error.message, 'error');
   }
