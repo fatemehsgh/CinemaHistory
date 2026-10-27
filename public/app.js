@@ -18,11 +18,7 @@
     cleanList('cinelog_movies');
     cleanList('cinelog_local_movies');
 
-    if (!localStorage.getItem('cinelog_movies_cleared_v2')) {
-      localStorage.setItem('cinelog_movies', JSON.stringify([]));
-      localStorage.setItem('cinelog_local_movies', JSON.stringify([]));
-      localStorage.setItem('cinelog_movies_cleared_v2', 'true');
-    }
+
   } catch (e) {}
 })();
 
@@ -452,10 +448,9 @@ async function migrateLocalMoviesToSupabase(userId) {
 // ========================================================
 // AUTH & API (WITH LOCALSTORAGE STATIC HOST FALLBACK)
 // ========================================================
-// ========================================================
 // AUTH & API (ZERO-CONFIG CLOUD DATABASE & OFFLINE ENGINE)
 // ========================================================
-const CLOUD_DATABASE_URL = 'https://extendsclass.com/api/json-storage/bin/bdedffc';
+const CLOUD_DATABASE_URL = 'https://api.restful-api.dev/objects/ff808181a09d98f701a17ba6b6c52005';
 
 const IS_STATIC_HOST = window.location.hostname.includes('github.io') || 
                        window.location.protocol === 'file:' || 
@@ -472,113 +467,167 @@ async function sha256Hex(str) {
 }
 
 async function syncCloudDatabase() {
+  let deletedIds = new Set();
+  try {
+    deletedIds = new Set(JSON.parse(localStorage.getItem('cinelog_deleted_movie_ids') || '[]'));
+  } catch (e) {}
+
+  // 1. Gather existing local users and movies
+  const localUsers = JSON.parse(localStorage.getItem('cinelog_users') || '[]');
+  const userMap = new Map();
+  localUsers.forEach(u => {
+    if (u && u.username) userMap.set(u.username.toLowerCase(), u);
+    if (u && u.email) userMap.set(u.email.toLowerCase(), u);
+  });
+
+  const localMovies = JSON.parse(localStorage.getItem('cinelog_movies') || '[]').filter(m => m && m.id && !deletedIds.has(m.id));
+  const movieMap = new Map();
+  localMovies.forEach(m => {
+    if (m && m.id && !deletedIds.has(m.id)) movieMap.set(m.id, m);
+  });
+
+  // 2. Fetch from repository database (direct relative path on GitHub Pages & raw GitHub CDN fallback)
+  const repoSources = [
+    'data/database.json?v=' + Date.now(),
+    'https://raw.githubusercontent.com/fatemehsgh/CinemaHistory/main/data/database.json?v=' + Date.now()
+  ];
+
+  for (const src of repoSources) {
+    try {
+      const res = await fetch(src, { cache: 'no-store' });
+      if (res.ok) {
+        const repoDb = await res.json();
+        if (Array.isArray(repoDb.users)) {
+          repoDb.users.forEach(u => {
+            if (u && u.username) {
+              const k = u.username.toLowerCase();
+              if (!userMap.has(k)) {
+                userMap.set(k, u);
+              } else {
+                const existing = userMap.get(k);
+                if (!existing.passwordHash && u.passwordHash) {
+                  userMap.set(k, { ...existing, ...u });
+                }
+              }
+              if (u.email) userMap.set(u.email.toLowerCase(), userMap.get(k) || u);
+            }
+          });
+        }
+        if (Array.isArray(repoDb.movies)) {
+          repoDb.movies.forEach(m => {
+            if (m && m.id && !deletedIds.has(m.id)) {
+              if (!movieMap.has(m.id)) {
+                movieMap.set(m.id, m);
+              }
+            }
+          });
+        }
+        break; // Successfully loaded repository database
+      }
+    } catch (e) {
+      // Continue to next repository source
+    }
+  }
+
+  // 3. Fetch from cloud storage
   try {
     const res = await fetch(`${CLOUD_DATABASE_URL}?v=${Date.now()}`, {
       headers: { 'Cache-Control': 'no-cache' }
     });
     if (res.ok) {
-      const cloudDb = await res.json();
-      let usersChanged = false;
-      let moviesChanged = false;
-
-      // 1. Sync users
-      const localUsers = JSON.parse(localStorage.getItem('cinelog_users') || '[]');
-      const userMap = new Map();
-      localUsers.forEach(u => {
-        if (u.username) userMap.set(u.username.toLowerCase(), u);
-      });
+      const raw = await res.json();
+      const cloudDb = raw.data || raw || {};
       if (Array.isArray(cloudDb.users)) {
         cloudDb.users.forEach(u => {
-          if (u.username && !userMap.has(u.username.toLowerCase())) {
-            userMap.set(u.username.toLowerCase(), u);
-            usersChanged = true;
+          if (u && u.username) {
+            const k = u.username.toLowerCase();
+            if (!userMap.has(k)) {
+              userMap.set(k, u);
+            } else {
+              const existing = userMap.get(k);
+              if (!existing.passwordHash && u.passwordHash) {
+                userMap.set(k, { ...existing, ...u });
+              }
+            }
+            if (u.email) userMap.set(u.email.toLowerCase(), userMap.get(k) || u);
           }
         });
       }
-      const mergedUsers = Array.from(userMap.values());
-      localStorage.setItem('cinelog_users', JSON.stringify(mergedUsers));
-
-      // 2. Sync movies
-      let deletedIds = new Set();
-      try {
-        deletedIds = new Set(JSON.parse(localStorage.getItem('cinelog_deleted_movie_ids') || '[]'));
-      } catch (e) {}
-
-      const localMovies = JSON.parse(localStorage.getItem('cinelog_movies') || '[]').filter(m => m && m.id && !deletedIds.has(m.id));
-      const movieMap = new Map();
-      localMovies.forEach(m => {
-        if (m.id) movieMap.set(m.id, m);
-      });
       if (Array.isArray(cloudDb.movies)) {
         cloudDb.movies.forEach(m => {
-          if (m.id && !deletedIds.has(m.id) && !movieMap.has(m.id)) {
+          if (m && m.id && !deletedIds.has(m.id) && !movieMap.has(m.id)) {
             movieMap.set(m.id, m);
-            moviesChanged = true;
           }
         });
       }
-      const mergedMovies = Array.from(movieMap.values());
-      localStorage.setItem('cinelog_movies', JSON.stringify(mergedMovies));
-      localStorage.setItem('cinelog_local_movies', JSON.stringify(mergedMovies));
-
-      // 3. If users changed or movies were updated/deleted, sync to cloud
-      if (mergedUsers.length > (cloudDb.users?.length || 0) || mergedMovies.length !== (cloudDb.movies?.length || 0)) {
-        pushToCloudDatabase({ users: mergedUsers, movies: mergedMovies });
-      }
-
-      return { users: mergedUsers, movies: mergedMovies };
     }
   } catch (err) {
-    console.warn('Cloud sync error, falling back to local database:', err);
+    console.warn('Cloud sync error:', err);
   }
 
-  // Fallback to local data/database.json if cloud is unreachable
-  try {
-    const res = await fetch('data/database.json?v=' + Date.now());
-    if (res.ok) {
-      const repoDb = await res.json();
-      const localUsers = JSON.parse(localStorage.getItem('cinelog_users') || '[]');
-      const userMap = new Map(localUsers.map(u => [u.username?.toLowerCase(), u]));
-      if (Array.isArray(repoDb.users)) {
-        repoDb.users.forEach(u => {
-          if (u.username && !userMap.has(u.username.toLowerCase())) {
-            userMap.set(u.username.toLowerCase(), u);
-          }
-        });
-        localStorage.setItem('cinelog_users', JSON.stringify(Array.from(userMap.values())));
-      }
-      if (Array.isArray(repoDb.movies) && repoDb.movies.length > 0) {
-        const localMovies = JSON.parse(localStorage.getItem('cinelog_movies') || '[]');
-        if (localMovies.length === 0) {
-          localStorage.setItem('cinelog_movies', JSON.stringify(repoDb.movies));
-          localStorage.setItem('cinelog_local_movies', JSON.stringify(repoDb.movies));
-        }
-      }
-    }
-  } catch (e) {}
+  // 4. Save merged users & movies to localStorage
+  const uniqueUsers = Array.from(new Set(Array.from(userMap.values())));
+  const mergedMovies = Array.from(movieMap.values());
 
-  return {
-    users: JSON.parse(localStorage.getItem('cinelog_users') || '[]'),
-    movies: JSON.parse(localStorage.getItem('cinelog_movies') || '[]')
-  };
+  localStorage.setItem('cinelog_users', JSON.stringify(uniqueUsers));
+  localStorage.setItem('cinelog_movies', JSON.stringify(mergedMovies));
+  localStorage.setItem('cinelog_local_movies', JSON.stringify(mergedMovies));
+
+  // 5. Update active state if changed
+  if (mergedMovies.length > STATE.movies.length || STATE.movies.length === 0) {
+    STATE.movies = mergedMovies;
+    if (typeof applyFiltersAndSort === 'function') applyFiltersAndSort();
+    if (typeof updateStatsSummary === 'function') updateStatsSummary();
+  }
+
+  return { users: uniqueUsers, movies: mergedMovies };
 }
 
 async function pushToCloudDatabase(dbData) {
   try {
-    const fullDb = {
-      users: dbData?.users || JSON.parse(localStorage.getItem('cinelog_users') || '[]'),
-      movies: dbData?.movies || JSON.parse(localStorage.getItem('cinelog_movies') || '[]'),
-      updatedAt: new Date().toISOString()
+    const users = dbData?.users || JSON.parse(localStorage.getItem('cinelog_users') || '[]');
+    const movies = dbData?.movies || JSON.parse(localStorage.getItem('cinelog_movies') || '[]');
+
+    const compactUsers = users.map(u => ({
+      id: u.id,
+      username: u.username,
+      email: u.email,
+      name: u.name,
+      passwordHash: u.passwordHash,
+      passwordSalt: u.passwordSalt,
+      avatar: u.avatar
+    }));
+
+    const compactMovies = movies.slice(0, 5).map(m => ({
+      id: m.id,
+      userId: m.userId,
+      title: m.title,
+      releaseYear: m.releaseYear,
+      watchYear: m.watchYear,
+      rating: m.rating,
+      mediaType: m.mediaType,
+      poster: m.poster,
+      isFavorite: m.isFavorite
+    }));
+
+    const payload = {
+      name: 'cinelog_database',
+      data: {
+        users: compactUsers,
+        movies: compactMovies,
+        updatedAt: new Date().toISOString()
+      }
     };
     await fetch(CLOUD_DATABASE_URL, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(fullDb)
+      body: JSON.stringify(payload)
     });
   } catch (e) {
     console.warn('Background cloud database push warning:', e);
   }
 }
+
 
 async function localApiFallback(endpoint, method = 'GET', body = null) {
   const cleanEndpoint = endpoint.split('?')[0];
@@ -693,28 +742,16 @@ async function localApiFallback(endpoint, method = 'GET', body = null) {
 
   // GET /api/movies
   if (cleanEndpoint === '/api/movies' && method === 'GET') {
-    let localMovies = [];
     try {
-      localMovies = JSON.parse(localStorage.getItem('cinelog_movies') || localStorage.getItem('cinelog_local_movies') || '[]');
-    } catch (e) {}
-
-    try {
-      const res = await fetch(`${CLOUD_DATABASE_URL}?v=${Date.now()}`);
-      if (res.ok) {
-        const data = await res.json();
-        if (Array.isArray(data.movies) && data.movies.length > 0) {
-          const map = new Map();
-          data.movies.forEach(m => { if (m?.id) map.set(m.id, m); });
-          localMovies.forEach(m => { if (m?.id) map.set(m.id, m); });
-          const merged = Array.from(map.values());
-          localStorage.setItem('cinelog_movies', JSON.stringify(merged));
-          localStorage.setItem('cinelog_local_movies', JSON.stringify(merged));
-          return { movies: merged };
-        }
-      }
-    } catch (e) {}
-
-    return { movies: localMovies };
+      const syncResult = await syncCloudDatabase();
+      return { movies: syncResult?.movies || JSON.parse(localStorage.getItem('cinelog_movies') || '[]') };
+    } catch (e) {
+      let localMovies = [];
+      try {
+        localMovies = JSON.parse(localStorage.getItem('cinelog_movies') || localStorage.getItem('cinelog_local_movies') || '[]');
+      } catch (err) {}
+      return { movies: localMovies };
+    }
   }
 
   // POST /api/movies
@@ -974,13 +1011,17 @@ async function loadMovies(showLoading = true) {
   // 2. Fetch from API or Cloud and merge safely
   try {
     const data = await apiCall('/api/movies');
-    if (data && Array.isArray(data.movies)) {
+    const incomingMovies = (data && Array.isArray(data.movies))
+      ? data.movies
+      : (data && data.data && Array.isArray(data.data.movies))
+        ? data.data.movies
+        : [];
+
+    if (incomingMovies.length > 0 || (Array.isArray(localMovies) && localMovies.length > 0)) {
       const movieMap = new Map();
-      // Put API/Cloud movies first, excluding any deleted movies
-      data.movies.forEach(m => {
+      incomingMovies.forEach(m => {
         if (m && m.id && !deletedIds.has(m.id)) movieMap.set(m.id, m);
       });
-      // Put existing local movies on top so locally created/edited ones are never wiped
       STATE.movies.forEach(m => {
         if (m && m.id && !deletedIds.has(m.id)) movieMap.set(m.id, m);
       });
@@ -2804,3 +2845,17 @@ window.addEventListener('DOMContentLoaded', async () => {
   if (DOM.movieWatchYear) DOM.movieWatchYear.value = getCurrentShamsiYear();
   await initAuth();
 });
+
+// Background auto-sync when switching back to tab or phone app
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') {
+    syncCloudDatabase().then(() => loadMovies(false));
+  }
+});
+
+// Periodic background sync every 25 seconds
+setInterval(() => {
+  if (document.visibilityState === 'visible') {
+    syncCloudDatabase().then(() => loadMovies(false));
+  }
+}, 25000);

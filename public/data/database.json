@@ -51,5 +51,24 @@
       "createdAt": 1793010711088
     }
   },
-  "movies": []
+  "movies": [
+    {
+      "id": "mov-pc-1793077642495",
+      "userId": "user-e969eb16-d4ce-409c-a7f8-c95231a19dff",
+      "title": "میان‌ستاره‌ای (Interstellar)",
+      "mediaType": "movie",
+      "releaseYear": 2014,
+      "watchYear": 1403,
+      "synopsis": "بدون خلاصه",
+      "genres": [
+        "علمی‌تخیلی",
+        "درام"
+      ],
+      "rating": 10,
+      "review": "یکی از شاهکارهای تاریخ سینما",
+      "poster": "https://image.tmdb.org/t/p/w600_and_h900_bestv2/gEU2QniE6E77NI6lCU6MxlNBvIx.jpg",
+      "isFavorite": false,
+      "createdAt": "2026-10-27T05:07:22.495Z"
+    }
+  ]
 }

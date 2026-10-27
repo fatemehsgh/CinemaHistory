@@ -37,14 +37,38 @@ function readDB() {
   }
 }
 
-const CLOUD_BIN_URL = 'https://extendsclass.com/api/json-storage/bin/bdedffc';
+const CLOUD_BIN_URL = 'https://api.restful-api.dev/objects/ff808181a09d98f701a17ba6b6c52005';
 
 function pushToCloud(data) {
   try {
+    const compactUsers = (data.users || []).map(u => ({
+      id: u.id,
+      username: u.username,
+      email: u.email,
+      name: u.name,
+      passwordHash: u.passwordHash,
+      passwordSalt: u.passwordSalt,
+      avatar: u.avatar
+    }));
+    const compactMovies = (data.movies || []).slice(0, 5).map(m => ({
+      id: m.id,
+      userId: m.userId,
+      title: m.title,
+      releaseYear: m.releaseYear,
+      watchYear: m.watchYear,
+      rating: m.rating,
+      mediaType: m.mediaType,
+      poster: m.poster,
+      isFavorite: m.isFavorite
+    }));
+
     const payload = JSON.stringify({
-      users: data.users || [],
-      movies: data.movies || [],
-      updatedAt: new Date().toISOString()
+      name: 'cinelog_database',
+      data: {
+        users: compactUsers,
+        movies: compactMovies,
+        updatedAt: new Date().toISOString()
+      }
     });
     fetch(CLOUD_BIN_URL, {
       method: 'PUT',
@@ -54,10 +78,79 @@ function pushToCloud(data) {
   } catch (e) {}
 }
 
+async function syncFromCloudOnStart() {
+  try {
+    const res = await fetch(CLOUD_BIN_URL);
+    if (res.ok) {
+      const raw = await res.json();
+      const cloudDb = raw.data || raw;
+      if (cloudDb && (Array.isArray(cloudDb.movies) || Array.isArray(cloudDb.users))) {
+        const db = readDB();
+        let changed = false;
+        if (Array.isArray(cloudDb.movies) && cloudDb.movies.length > 0) {
+          const map = new Map();
+          (db.movies || []).forEach(m => { if (m?.id) map.set(m.id, m); });
+          cloudDb.movies.forEach(m => {
+            if (m?.id && !map.has(m.id)) {
+              map.set(m.id, m);
+              changed = true;
+            }
+          });
+          db.movies = Array.from(map.values());
+        }
+        if (Array.isArray(cloudDb.users) && cloudDb.users.length > 0) {
+          const uMap = new Map();
+          (db.users || []).forEach(u => { if (u?.username) uMap.set(u.username.toLowerCase(), u); });
+          cloudDb.users.forEach(u => {
+            if (u?.username && !uMap.has(u.username.toLowerCase())) {
+              uMap.set(u.username.toLowerCase(), u);
+              changed = true;
+            }
+          });
+          db.users = Array.from(uMap.values());
+        }
+        if (changed) {
+          fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2), 'utf8');
+          console.log('✅ Server database synchronized with cloud data.');
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('Initial cloud sync warning:', e.message);
+  }
+}
+syncFromCloudOnStart();
+
+const { exec } = require('child_process');
+
+let gitPushTimer = null;
+function scheduleGitPush() {
+  if (gitPushTimer) clearTimeout(gitPushTimer);
+  gitPushTimer = setTimeout(() => {
+    exec('git add data/database.json public/data/database.json && git commit -m "sync: auto-sync database to GitHub Pages" && git push origin main', (err, stdout, stderr) => {
+      if (err) {
+        console.warn('Auto git push notice (will retry on next change):', err.message);
+      } else {
+        console.log('🚀 Successfully synchronized database to GitHub Pages!');
+      }
+    });
+  }, 2500);
+}
+
 function writeDB(data) {
   try {
-    fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2), 'utf8');
+    const jsonStr = JSON.stringify(data, null, 2);
+    fs.writeFileSync(DB_FILE, jsonStr, 'utf8');
+
+    const publicDbFile = path.join(PUBLIC_DIR, 'data', 'database.json');
+    const publicDbDir = path.dirname(publicDbFile);
+    if (!fs.existsSync(publicDbDir)) {
+      fs.mkdirSync(publicDbDir, { recursive: true });
+    }
+    fs.writeFileSync(publicDbFile, jsonStr, 'utf8');
+
     pushToCloud(data);
+    scheduleGitPush();
   } catch (err) {
     console.error('Error writing database:', err);
   }
@@ -472,7 +565,7 @@ oLink.Save
     const user = getAuthUser(req, db);
     let movies = db.movies || [];
     if (user) {
-      const userMovies = movies.filter(m => !m.userId || m.userId === user.id);
+      const userMovies = movies.filter(m => !m.userId || m.userId === user.id || m.userId === user.username || m.userId === 'usr-1' || m.userId === 'user-default');
       if (userMovies.length > 0) {
         movies = userMovies;
       }
