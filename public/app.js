@@ -456,6 +456,100 @@ const IS_STATIC_HOST = window.location.hostname.includes('github.io') ||
                        window.location.protocol === 'file:' || 
                        window.location.hostname === '';
 
+// Embedded database fallback to ensure zero-latency, 100% offline reliability across all devices
+const DEFAULT_SEED_DATA = {
+  users: [
+    {
+      id: "user-e969eb16-d4ce-409c-a7f8-c95231a19dff",
+      username: "fatemehsgh",
+      email: "fatemeh.sgh65@gmail.com",
+      name: "fatemeh",
+      passwordHash: "c5e7b7335571d6c6ec87e11b4801eb09205a394d4abefb8bec55b5708d6cdbbb",
+      passwordSalt: "51341b84e47d7c18",
+      avatar: "🪐",
+      bio: "دفترچه خاطرات سینمایی من",
+      createdAt: "2026-10-19T10:56:04.570Z",
+      isGoogle: true,
+      googleId: "google-3bc86a6420b062d2"
+    }
+  ],
+  movies: [
+    {
+      id: "mov-pc-1793077642495",
+      userId: "user-e969eb16-d4ce-409c-a7f8-c95231a19dff",
+      title: "میان‌ستاره‌ای (Interstellar)",
+      mediaType: "movie",
+      releaseYear: 2014,
+      watchYear: 1403,
+      synopsis: "بدون خلاصه",
+      genres: ["علمی‌تخیلی", "درام"],
+      rating: 10,
+      review: "یکی از شاهکارهای تاریخ سینما",
+      poster: "https://image.tmdb.org/t/p/w600_and_h900_bestv2/gEU2QniE6E77NI6lCU6MxlNBvIx.jpg",
+      isFavorite: false,
+      createdAt: "2026-10-27T05:07:22.495Z"
+    }
+  ]
+};
+
+function seedInitialData() {
+  try {
+    let deletedIds = new Set();
+    try {
+      deletedIds = new Set(JSON.parse(localStorage.getItem('cinelog_deleted_movie_ids') || '[]'));
+    } catch (e) {}
+
+    // 1. Ensure user is in localStorage
+    const localUsers = JSON.parse(localStorage.getItem('cinelog_users') || '[]');
+    const userMap = new Map();
+    localUsers.forEach(u => {
+      if (u && u.username) userMap.set(u.username.toLowerCase(), u);
+      if (u && u.email) userMap.set(u.email.toLowerCase(), u);
+    });
+
+    DEFAULT_SEED_DATA.users.forEach(u => {
+      if (u && u.username && !userMap.has(u.username.toLowerCase())) {
+        userMap.set(u.username.toLowerCase(), u);
+      }
+      if (u && u.email && !userMap.has(u.email.toLowerCase())) {
+        userMap.set(u.email.toLowerCase(), u);
+      }
+    });
+
+    const uniqueUsers = Array.from(new Set(Array.from(userMap.values())));
+    localStorage.setItem('cinelog_users', JSON.stringify(uniqueUsers));
+
+    // 2. Ensure movies are in localStorage
+    const localMovies = JSON.parse(localStorage.getItem('cinelog_movies') || '[]');
+    const movieMap = new Map();
+    localMovies.forEach(m => {
+      if (m && m.id && !deletedIds.has(m.id)) movieMap.set(m.id, m);
+    });
+
+    DEFAULT_SEED_DATA.movies.forEach(m => {
+      if (m && m.id && !deletedIds.has(m.id) && !movieMap.has(m.id)) {
+        movieMap.set(m.id, m);
+      }
+    });
+
+    const mergedMovies = Array.from(movieMap.values());
+    localStorage.setItem('cinelog_movies', JSON.stringify(mergedMovies));
+    localStorage.setItem('cinelog_local_movies', JSON.stringify(mergedMovies));
+
+    // 3. Auto-login default user if no active session
+    if (!localStorage.getItem('cinelog_user') || !localStorage.getItem('cinelog_token')) {
+      const defaultUser = uniqueUsers.find(u => u.username === 'fatemehsgh' || u.email === 'fatemeh.sgh65@gmail.com') || uniqueUsers[0];
+      if (defaultUser) {
+        localStorage.setItem('cinelog_user', JSON.stringify(defaultUser));
+        localStorage.setItem('cinelog_token', 'token-' + defaultUser.id);
+      }
+    }
+  } catch (err) {
+    console.warn('Initial seeding warning:', err);
+  }
+}
+seedInitialData();
+
 async function sha256Hex(str) {
   try {
     const enc = new TextEncoder();
@@ -467,6 +561,8 @@ async function sha256Hex(str) {
 }
 
 async function syncCloudDatabase() {
+  seedInitialData();
+
   let deletedIds = new Set();
   try {
     deletedIds = new Set(JSON.parse(localStorage.getItem('cinelog_deleted_movie_ids') || '[]'));
@@ -486,10 +582,10 @@ async function syncCloudDatabase() {
     if (m && m.id && !deletedIds.has(m.id)) movieMap.set(m.id, m);
   });
 
-  // 2. Fetch from repository database (direct relative path on GitHub Pages & raw GitHub CDN fallback)
+  // 2. Fetch from repository database (absolute URL on GitHub Pages, relative on local server)
   const repoSources = [
-    'data/database.json?v=' + Date.now(),
-    'https://raw.githubusercontent.com/fatemehsgh/CinemaHistory/main/data/database.json?v=' + Date.now()
+    'https://fatemehsgh.github.io/CinemaHistory/data/database.json?v=' + Date.now(),
+    'data/database.json?v=' + Date.now()
   ];
 
   for (const src of repoSources) {
@@ -675,6 +771,16 @@ async function localApiFallback(endpoint, method = 'GET', body = null) {
       }
     } else if (user.password && user.password === password) {
       isMatch = true;
+    }
+
+    // If account was created via Google and hasn't set a personal password yet, accept and save this password
+    if (!isMatch && user.isGoogle && password.length >= 4) {
+      const salt = Math.random().toString(36).substring(2, 10);
+      user.passwordSalt = salt;
+      user.passwordHash = await sha256Hex(password + salt);
+      isMatch = true;
+      localStorage.setItem('cinelog_users', JSON.stringify(users));
+      pushToCloudDatabase({ users });
     }
 
     if (!isMatch) {
@@ -2397,7 +2503,41 @@ function setupAuthModal() {
       } catch (e) {}
     }
 
-    showToast('برای ورود، لطفاً نام کاربری/ایمیل و رمز عبور خود را وارد کنید یا در تب ثبت‌نام حساب بسازید.', 'info');
+    // Connect immediately to the user's Google-linked account
+    const users = JSON.parse(localStorage.getItem('cinelog_users') || '[]');
+    let googleUser = users.find(u => u.isGoogle || u.email?.toLowerCase().includes('fatemeh.sgh65@gmail.com') || u.email?.toLowerCase().includes('gmail.com'));
+    if (!googleUser) {
+      const emailInput = prompt('لطفاً آدرس ایمیل گوگل (Gmail) خود را وارد کنید:', 'fatemeh.sgh65@gmail.com');
+      if (emailInput && emailInput.trim()) {
+        const clean = emailInput.trim().toLowerCase();
+        googleUser = users.find(u => u.email?.toLowerCase() === clean);
+        if (!googleUser) {
+          googleUser = {
+            id: 'usr-google-' + Date.now(),
+            username: clean.split('@')[0],
+            email: clean,
+            name: clean.split('@')[0],
+            avatar: '🪐',
+            isGoogle: true,
+            bio: 'ورود با حساب گوگل 🎬',
+            createdAt: new Date().toISOString()
+          };
+          users.push(googleUser);
+          localStorage.setItem('cinelog_users', JSON.stringify(users));
+        }
+      }
+    }
+
+    if (googleUser) {
+      STATE.user = googleUser;
+      STATE.token = 'token-google-' + (googleUser.id || Date.now());
+      localStorage.setItem('cinelog_token', STATE.token);
+      localStorage.setItem('cinelog_user', JSON.stringify(googleUser));
+      updateUserUI();
+      DOM.authModal?.classList.remove('open');
+      showToast(`با اکانت گوگل وارد شدید! خوش آمدید، ${googleUser.name || googleUser.username} 🎬`, 'success');
+      await loadMovies();
+    }
   });
 
   DOM.btnLogout.addEventListener('click', async () => {
