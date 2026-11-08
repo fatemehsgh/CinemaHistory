@@ -485,18 +485,35 @@ async function fetchServerCloudConfig() {
 async function migrateLocalMoviesToSupabase(userId) {
   if (!supabaseClient || !userId) return;
   try {
-    const localMovies = JSON.parse(localStorage.getItem('cinelog_movies') || '[]');
-    if (localMovies.length === 0) return;
+    let localMovies = [];
+    try {
+      localMovies = JSON.parse(localStorage.getItem('cinelog_movies') || '[]');
+    } catch (e) {}
 
-    const { count, error } = await supabaseClient
+    let deletedIds = new Set();
+    try {
+      deletedIds = new Set(JSON.parse(localStorage.getItem('cinelog_deleted_movie_ids') || '[]'));
+    } catch (e) {}
+
+    const validLocal = localMovies.filter(m => m && m.id && !deletedIds.has(m.id));
+    if (validLocal.length === 0) return;
+
+    // Fetch existing movie IDs from Supabase for this user
+    const { data: existingRows } = await supabaseClient
       .from('movies')
-      .select('*', { count: 'exact', head: true });
+      .select('id')
+      .eq('user_id', userId);
 
-    if (!error && count === 0) {
-      const rows = localMovies.map(m => movieToDb(m, userId));
-      const { error: insertErr } = await supabaseClient.from('movies').insert(rows);
+    const existingIds = new Set((existingRows || []).map(r => r.id));
+    const toUpload = validLocal.filter(m => !existingIds.has(m.id));
+
+    if (toUpload.length > 0) {
+      const rows = toUpload.map(m => movieToDb(m, userId));
+      const { error: insertErr } = await supabaseClient.from('movies').upsert(rows);
       if (!insertErr) {
-        showToast(`${toPersianDigits(rows.length)} فیلم قبلی شما به حساب ابری منتقل شد!`, 'success');
+        showToast(`${toPersianDigits(rows.length)} فیلم شما به حساب ابری همگام‌سازی شد! ☁️`, 'success');
+      } else {
+        console.warn('Upsert migration error:', insertErr);
       }
     }
   } catch (e) {
@@ -831,8 +848,16 @@ async function initAuth() {
         localStorage.setItem('cinelog_user', JSON.stringify(STATE.user));
         localStorage.setItem('cinelog_token', STATE.token);
         updateUserUI();
+        await migrateLocalMoviesToSupabase(u.id);
         await loadMovies(true);
         return;
+      } else {
+        // If Supabase is connected but no active cloud session, clear legacy local mock accounts
+        const cachedUser = localStorage.getItem('cinelog_user');
+        if (cachedUser && cachedUser.includes('user-e969eb16')) {
+          localStorage.removeItem('cinelog_user');
+          localStorage.removeItem('cinelog_token');
+        }
       }
     } catch (e) {
       console.warn('Supabase getSession error:', e);
@@ -1906,7 +1931,8 @@ async function handleMovieFormSubmit(e) {
       if (supabaseClient && STATE.user && idx !== -1) {
         try {
           const row = movieToDb(STATE.movies[idx], STATE.user.id);
-          supabaseClient.from('movies').update(row).eq('id', id).catch(e => console.warn('Supabase update warning:', e));
+          const { error: updErr } = await supabaseClient.from('movies').upsert([row]);
+          if (updErr) console.warn('Supabase update error:', updErr);
         } catch (e) {
           console.warn('Supabase update error:', e);
         }
@@ -1933,10 +1959,16 @@ async function handleMovieFormSubmit(e) {
       if (supabaseClient && STATE.user) {
         try {
           const row = movieToDb(movieObj, STATE.user.id);
-          supabaseClient.from('movies').insert([row]).catch(e => console.warn('Supabase insert warning:', e));
+          const { error: insErr } = await supabaseClient.from('movies').upsert([row]);
+          if (insErr) {
+            console.error('Supabase movie insert error:', insErr);
+            showToast('هشدار در ذخیره ابری: ' + (insErr.message || ''), 'error');
+          }
         } catch (e) {
           console.warn('Supabase insert error:', e);
         }
+      } else {
+        showToast('فیلم به صورت محلی ذخیره شد. برای دسترسی از گوشی وارد حساب شوید.', 'info');
       }
 
       if (!IS_STATIC_HOST) {
