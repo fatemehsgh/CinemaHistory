@@ -2097,6 +2097,19 @@ function setupAuthModal() {
     });
   });
 
+function usernameToSafeEmail(username) {
+  const trimmed = (username || '').trim().toLowerCase();
+  const ascii = trimmed.replace(/[^a-z0-9_.-]/g, '');
+  if (ascii.length >= 2) {
+    return `${ascii}@cinelog.app`;
+  }
+  let hex = '';
+  for (let i = 0; i < trimmed.length; i++) {
+    hex += trimmed.charCodeAt(i).toString(16);
+  }
+  return `u_${hex.slice(0, 16)}@cinelog.app`;
+}
+
   DOM.loginForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     const username = DOM.loginUsername.value.trim();
@@ -2120,15 +2133,15 @@ function setupAuthModal() {
             const { data: prof } = await supabaseClient
               .from('profiles')
               .select('email')
-              .eq('username', username.toLowerCase())
+              .ilike('username', username)
               .maybeSingle();
             if (prof && prof.email) {
               loginEmail = prof.email;
             } else {
-              loginEmail = `${username.toLowerCase()}@cinelog.app`;
+              loginEmail = usernameToSafeEmail(username);
             }
           } catch (e) {
-            loginEmail = `${username.toLowerCase()}@cinelog.app`;
+            loginEmail = usernameToSafeEmail(username);
           }
         }
 
@@ -2193,19 +2206,30 @@ function setupAuthModal() {
   DOM.registerForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     const name = DOM.regName.value.trim();
-    const email = DOM.regEmail ? DOM.regEmail.value.trim() : '';
+    const rawEmail = DOM.regEmail ? DOM.regEmail.value.trim() : '';
     const username = DOM.regUsername.value.trim();
     const password = DOM.regPassword.value.trim();
     const activeAvatar = DOM.avatarPickerGrid.querySelector('.avatar-opt.active')?.dataset.avatar || '🎬';
 
-    if (password.length < 4) {
-      showToast('رمز عبور باید حداقل ۴ کاراکتر باشد.', 'error');
+    if (!username) {
+      showToast('لطفاً نام کاربری را وارد کنید.', 'error');
       return;
+    }
+
+    if (password.length < 6) {
+      showToast('رمز عبور باید حداقل ۶ کاراکتر باشد.', 'error');
+      return;
+    }
+
+    let cleanEmail = '';
+    if (rawEmail && rawEmail.includes('@') && rawEmail.includes('.')) {
+      cleanEmail = rawEmail.toLowerCase();
+    } else {
+      cleanEmail = usernameToSafeEmail(username);
     }
 
     if (supabaseClient) {
       try {
-        const cleanEmail = (email && email.includes('@')) ? email.toLowerCase() : `${username.toLowerCase()}@cinelog.app`;
         const { data, error } = await supabaseClient.auth.signUp({
           email: cleanEmail,
           password: password,
@@ -2219,8 +2243,11 @@ function setupAuthModal() {
         });
 
         if (error) {
-          if (error.message.includes('User already registered')) {
-            throw new Error('این ایمیل یا نام کاربری قبلاً ثبت شده است. لطفاً وارد شوید.');
+          if (error.message.includes('User already registered') || error.message.includes('already exists')) {
+            throw new Error('این نام کاربری یا ایمیل قبلاً ثبت شده است. لطفاً وارد شوید یا نام دیگری برگزینید.');
+          }
+          if (error.message.includes('Password should be at least')) {
+            throw new Error('رمز عبور باید حداقل ۶ کاراکتر باشد.');
           }
           throw new Error(error.message);
         }
@@ -2232,7 +2259,7 @@ function setupAuthModal() {
         try {
           await supabaseClient.from('profiles').upsert({
             id: data.user.id,
-            name: name,
+            name: name || username,
             username: username.toLowerCase(),
             email: cleanEmail,
             avatar: activeAvatar,
@@ -2244,7 +2271,7 @@ function setupAuthModal() {
 
         STATE.user = {
           id: data.user.id,
-          name: name,
+          name: name || username,
           username: username.toLowerCase(),
           email: cleanEmail,
           avatar: activeAvatar,
@@ -2253,7 +2280,7 @@ function setupAuthModal() {
 
         updateUserUI();
         DOM.authModal.classList.remove('open');
-        showToast(`حساب ابری شما با موفقیت ساخته شد! خوش آمدید، ${STATE.user.name}.`, 'success');
+        showToast(`حساب شما با موفقیت ساخته شد! خوش آمدید، ${STATE.user.name}. 🎉`, 'success');
         await migrateLocalMoviesToSupabase(STATE.user.id);
         await loadMovies();
         return;
@@ -2266,7 +2293,7 @@ function setupAuthModal() {
     try {
       const data = await apiCall('/api/register', 'POST', {
         name,
-        email,
+        email: cleanEmail,
         username,
         password,
         avatar: activeAvatar
