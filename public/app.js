@@ -256,6 +256,12 @@ function checkUrlHashConnection() {
 }
 
 function getSupabaseConfig() {
+  const globalConfig = window.CINELOG_CONFIG || {};
+  const globalUrl = (globalConfig.supabaseUrl || '').trim();
+  const globalKey = (globalConfig.supabaseAnonKey || '').trim();
+  if (globalUrl && !globalUrl.includes('YOUR_PROJECT_ID') && globalKey && !globalKey.includes('YOUR_SUPABASE_ANON_KEY')) {
+    return { url: globalUrl, key: globalKey };
+  }
   return {
     url: (localStorage.getItem('cinelog_supabase_url') || '').trim(),
     key: (localStorage.getItem('cinelog_supabase_anon_key') || '').trim()
@@ -275,6 +281,7 @@ function initSupabase() {
         }
       });
       setupRealtimeSync();
+      setupSupabaseAuth();
       return true;
     } catch (e) {
       console.error('Failed to init Supabase:', e);
@@ -284,6 +291,58 @@ function initSupabase() {
     supabaseClient = null;
   }
   return false;
+}
+
+let authListenerInitialized = false;
+function setupSupabaseAuth() {
+  if (!supabaseClient || authListenerInitialized) return;
+  authListenerInitialized = true;
+
+  try {
+    supabaseClient.auth.onAuthStateChange(async (event, session) => {
+      console.log('Supabase Auth Event:', event, session?.user?.email);
+      if (session && session.user) {
+        const u = session.user;
+        const meta = u.user_metadata || {};
+        const userObj = {
+          id: u.id,
+          email: u.email || '',
+          name: meta.full_name || meta.name || (u.email ? u.email.split('@')[0] : 'کاربر'),
+          username: meta.user_name || meta.username || (u.email ? u.email.split('@')[0] : 'user'),
+          avatar: meta.avatar_url || meta.picture || '🎬',
+          isGoogle: u.app_metadata?.provider === 'google' || Boolean(meta.avatar_url),
+          bio: 'دفترچه خاطرات سینمایی من'
+        };
+
+        STATE.user = userObj;
+        STATE.token = session.access_token || ('token-' + u.id);
+        localStorage.setItem('cinelog_user', JSON.stringify(userObj));
+        localStorage.setItem('cinelog_token', STATE.token);
+        updateUserUI();
+
+        if (event === 'SIGNED_IN') {
+          showToast(`خوش آمدید، ${userObj.name}! 🎬`, 'success');
+        }
+
+        await migrateLocalMoviesToSupabase(u.id);
+        await loadMovies(false);
+      } else if (event === 'SIGNED_OUT') {
+        STATE.user = null;
+        STATE.token = '';
+        STATE.movies = [];
+        STATE.filteredMovies = [];
+        localStorage.removeItem('cinelog_user');
+        localStorage.removeItem('cinelog_token');
+        localStorage.removeItem('cinelog_movies');
+        localStorage.removeItem('cinelog_local_movies');
+        updateUserUI();
+        renderMovies();
+        updateStatsSummary();
+      }
+    });
+  } catch (e) {
+    console.warn('setupSupabaseAuth error:', e);
+  }
 }
 
 function setupRealtimeSync() {
@@ -446,109 +505,11 @@ async function migrateLocalMoviesToSupabase(userId) {
 }
 
 // ========================================================
-// AUTH & API (WITH LOCALSTORAGE STATIC HOST FALLBACK)
+// AUTH & API CONTROLLER
 // ========================================================
-// AUTH & API (ZERO-CONFIG CLOUD DATABASE & OFFLINE ENGINE)
-// ========================================================
-const CLOUD_DATABASE_URL = 'https://api.restful-api.dev/objects/ff808181a09d98f701a17ba6b6c52005';
-
 const IS_STATIC_HOST = window.location.hostname.includes('github.io') || 
                        window.location.protocol === 'file:' || 
                        window.location.hostname === '';
-
-// Embedded database fallback to ensure zero-latency, 100% offline reliability across all devices
-const DEFAULT_SEED_DATA = {
-  users: [
-    {
-      id: "user-e969eb16-d4ce-409c-a7f8-c95231a19dff",
-      username: "fatemehsgh",
-      email: "fatemeh.sgh65@gmail.com",
-      name: "fatemeh",
-      passwordHash: "c5e7b7335571d6c6ec87e11b4801eb09205a394d4abefb8bec55b5708d6cdbbb",
-      passwordSalt: "51341b84e47d7c18",
-      avatar: "🪐",
-      bio: "دفترچه خاطرات سینمایی من",
-      createdAt: "2026-10-19T10:56:04.570Z",
-      isGoogle: true,
-      googleId: "google-3bc86a6420b062d2"
-    }
-  ],
-  movies: [
-    {
-      id: "mov-pc-1793077642495",
-      userId: "user-e969eb16-d4ce-409c-a7f8-c95231a19dff",
-      title: "میان‌ستاره‌ای (Interstellar)",
-      mediaType: "movie",
-      releaseYear: 2014,
-      watchYear: 1403,
-      synopsis: "بدون خلاصه",
-      genres: ["علمی‌تخیلی", "درام"],
-      rating: 10,
-      review: "یکی از شاهکارهای تاریخ سینما",
-      poster: "https://image.tmdb.org/t/p/w600_and_h900_bestv2/gEU2QniE6E77NI6lCU6MxlNBvIx.jpg",
-      isFavorite: false,
-      createdAt: "2026-10-27T05:07:22.495Z"
-    }
-  ]
-};
-
-function seedInitialData() {
-  try {
-    let deletedIds = new Set();
-    try {
-      deletedIds = new Set(JSON.parse(localStorage.getItem('cinelog_deleted_movie_ids') || '[]'));
-    } catch (e) {}
-
-    // 1. Ensure user is in localStorage
-    const localUsers = JSON.parse(localStorage.getItem('cinelog_users') || '[]');
-    const userMap = new Map();
-    localUsers.forEach(u => {
-      if (u && u.username) userMap.set(u.username.toLowerCase(), u);
-      if (u && u.email) userMap.set(u.email.toLowerCase(), u);
-    });
-
-    DEFAULT_SEED_DATA.users.forEach(u => {
-      if (u && u.username && !userMap.has(u.username.toLowerCase())) {
-        userMap.set(u.username.toLowerCase(), u);
-      }
-      if (u && u.email && !userMap.has(u.email.toLowerCase())) {
-        userMap.set(u.email.toLowerCase(), u);
-      }
-    });
-
-    const uniqueUsers = Array.from(new Set(Array.from(userMap.values())));
-    localStorage.setItem('cinelog_users', JSON.stringify(uniqueUsers));
-
-    // 2. Ensure movies are in localStorage
-    const localMovies = JSON.parse(localStorage.getItem('cinelog_movies') || '[]');
-    const movieMap = new Map();
-    localMovies.forEach(m => {
-      if (m && m.id && !deletedIds.has(m.id)) movieMap.set(m.id, m);
-    });
-
-    DEFAULT_SEED_DATA.movies.forEach(m => {
-      if (m && m.id && !deletedIds.has(m.id) && !movieMap.has(m.id)) {
-        movieMap.set(m.id, m);
-      }
-    });
-
-    const mergedMovies = Array.from(movieMap.values());
-    localStorage.setItem('cinelog_movies', JSON.stringify(mergedMovies));
-    localStorage.setItem('cinelog_local_movies', JSON.stringify(mergedMovies));
-
-    // 3. Auto-login default user if no active session
-    if (!localStorage.getItem('cinelog_user') || !localStorage.getItem('cinelog_token')) {
-      const defaultUser = uniqueUsers.find(u => u.username === 'fatemehsgh' || u.email === 'fatemeh.sgh65@gmail.com') || uniqueUsers[0];
-      if (defaultUser) {
-        localStorage.setItem('cinelog_user', JSON.stringify(defaultUser));
-        localStorage.setItem('cinelog_token', 'token-' + defaultUser.id);
-      }
-    }
-  } catch (err) {
-    console.warn('Initial seeding warning:', err);
-  }
-}
-seedInitialData();
 
 async function sha256Hex(str) {
   try {
@@ -557,170 +518,6 @@ async function sha256Hex(str) {
     return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
   } catch (e) {
     return '';
-  }
-}
-
-async function syncCloudDatabase() {
-  seedInitialData();
-
-  let deletedIds = new Set();
-  try {
-    deletedIds = new Set(JSON.parse(localStorage.getItem('cinelog_deleted_movie_ids') || '[]'));
-  } catch (e) {}
-
-  // 1. Gather existing local users and movies
-  const localUsers = JSON.parse(localStorage.getItem('cinelog_users') || '[]');
-  const userMap = new Map();
-  localUsers.forEach(u => {
-    if (u && u.username) userMap.set(u.username.toLowerCase(), u);
-    if (u && u.email) userMap.set(u.email.toLowerCase(), u);
-  });
-
-  const localMovies = JSON.parse(localStorage.getItem('cinelog_movies') || '[]').filter(m => m && m.id && !deletedIds.has(m.id));
-  const movieMap = new Map();
-  localMovies.forEach(m => {
-    if (m && m.id && !deletedIds.has(m.id)) movieMap.set(m.id, m);
-  });
-
-  // 2. Fetch from repository database (absolute URL on GitHub Pages, relative on local server)
-  const repoSources = [
-    'https://fatemehsgh.github.io/CinemaHistory/data/database.json?v=' + Date.now(),
-    'data/database.json?v=' + Date.now()
-  ];
-
-  for (const src of repoSources) {
-    try {
-      const res = await fetch(src, { cache: 'no-store' });
-      if (res.ok) {
-        const repoDb = await res.json();
-        if (Array.isArray(repoDb.users)) {
-          repoDb.users.forEach(u => {
-            if (u && u.username) {
-              const k = u.username.toLowerCase();
-              if (!userMap.has(k)) {
-                userMap.set(k, u);
-              } else {
-                const existing = userMap.get(k);
-                if (!existing.passwordHash && u.passwordHash) {
-                  userMap.set(k, { ...existing, ...u });
-                }
-              }
-              if (u.email) userMap.set(u.email.toLowerCase(), userMap.get(k) || u);
-            }
-          });
-        }
-        if (Array.isArray(repoDb.movies)) {
-          repoDb.movies.forEach(m => {
-            if (m && m.id && !deletedIds.has(m.id)) {
-              if (!movieMap.has(m.id)) {
-                movieMap.set(m.id, m);
-              }
-            }
-          });
-        }
-        break; // Successfully loaded repository database
-      }
-    } catch (e) {
-      // Continue to next repository source
-    }
-  }
-
-  // 3. Fetch from cloud storage
-  try {
-    const res = await fetch(`${CLOUD_DATABASE_URL}?v=${Date.now()}`, {
-      headers: { 'Cache-Control': 'no-cache' }
-    });
-    if (res.ok) {
-      const raw = await res.json();
-      const cloudDb = raw.data || raw || {};
-      if (Array.isArray(cloudDb.users)) {
-        cloudDb.users.forEach(u => {
-          if (u && u.username) {
-            const k = u.username.toLowerCase();
-            if (!userMap.has(k)) {
-              userMap.set(k, u);
-            } else {
-              const existing = userMap.get(k);
-              if (!existing.passwordHash && u.passwordHash) {
-                userMap.set(k, { ...existing, ...u });
-              }
-            }
-            if (u.email) userMap.set(u.email.toLowerCase(), userMap.get(k) || u);
-          }
-        });
-      }
-      if (Array.isArray(cloudDb.movies)) {
-        cloudDb.movies.forEach(m => {
-          if (m && m.id && !deletedIds.has(m.id) && !movieMap.has(m.id)) {
-            movieMap.set(m.id, m);
-          }
-        });
-      }
-    }
-  } catch (err) {
-    console.warn('Cloud sync error:', err);
-  }
-
-  // 4. Save merged users & movies to localStorage
-  const uniqueUsers = Array.from(new Set(Array.from(userMap.values())));
-  const mergedMovies = Array.from(movieMap.values());
-
-  localStorage.setItem('cinelog_users', JSON.stringify(uniqueUsers));
-  localStorage.setItem('cinelog_movies', JSON.stringify(mergedMovies));
-  localStorage.setItem('cinelog_local_movies', JSON.stringify(mergedMovies));
-
-  // 5. Update active state if changed
-  if (mergedMovies.length > STATE.movies.length || STATE.movies.length === 0) {
-    STATE.movies = mergedMovies;
-    if (typeof applyFiltersAndSort === 'function') applyFiltersAndSort();
-    if (typeof updateStatsSummary === 'function') updateStatsSummary();
-  }
-
-  return { users: uniqueUsers, movies: mergedMovies };
-}
-
-async function pushToCloudDatabase(dbData) {
-  try {
-    const users = dbData?.users || JSON.parse(localStorage.getItem('cinelog_users') || '[]');
-    const movies = dbData?.movies || JSON.parse(localStorage.getItem('cinelog_movies') || '[]');
-
-    const compactUsers = users.map(u => ({
-      id: u.id,
-      username: u.username,
-      email: u.email,
-      name: u.name,
-      passwordHash: u.passwordHash,
-      passwordSalt: u.passwordSalt,
-      avatar: u.avatar
-    }));
-
-    const compactMovies = movies.slice(0, 5).map(m => ({
-      id: m.id,
-      userId: m.userId,
-      title: m.title,
-      releaseYear: m.releaseYear,
-      watchYear: m.watchYear,
-      rating: m.rating,
-      mediaType: m.mediaType,
-      poster: m.poster,
-      isFavorite: m.isFavorite
-    }));
-
-    const payload = {
-      name: 'cinelog_database',
-      data: {
-        users: compactUsers,
-        movies: compactMovies,
-        updatedAt: new Date().toISOString()
-      }
-    };
-    await fetch(CLOUD_DATABASE_URL, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-  } catch (e) {
-    console.warn('Background cloud database push warning:', e);
   }
 }
 
@@ -749,9 +546,6 @@ async function localApiFallback(endpoint, method = 'GET', body = null) {
       throw new Error('لطفاً رمز عبور خود را وارد کنید.');
     }
 
-    // Refresh users from cloud
-    await syncCloudDatabase();
-
     const cleanUser = username.trim().toLowerCase();
     const users = JSON.parse(localStorage.getItem('cinelog_users') || '[]');
     let user = users.find(u => 
@@ -771,16 +565,6 @@ async function localApiFallback(endpoint, method = 'GET', body = null) {
       }
     } else if (user.password && user.password === password) {
       isMatch = true;
-    }
-
-    // If account was created via Google and hasn't set a personal password yet, accept and save this password
-    if (!isMatch && user.isGoogle && password.length >= 4) {
-      const salt = Math.random().toString(36).substring(2, 10);
-      user.passwordSalt = salt;
-      user.passwordHash = await sha256Hex(password + salt);
-      isMatch = true;
-      localStorage.setItem('cinelog_users', JSON.stringify(users));
-      pushToCloudDatabase({ users });
     }
 
     if (!isMatch) {
@@ -808,8 +592,6 @@ async function localApiFallback(endpoint, method = 'GET', body = null) {
       throw new Error('رمز عبور باید حداقل ۴ کاراکتر باشد.');
     }
 
-    await syncCloudDatabase();
-
     const cleanUser = username.trim().toLowerCase();
     const users = JSON.parse(localStorage.getItem('cinelog_users') || '[]');
     if (users.some(u => u.username?.toLowerCase() === cleanUser)) {
@@ -831,7 +613,6 @@ async function localApiFallback(endpoint, method = 'GET', body = null) {
     };
     users.push(user);
     localStorage.setItem('cinelog_users', JSON.stringify(users));
-    pushToCloudDatabase({ users });
 
     const token = 'token-' + Date.now();
     localStorage.setItem('cinelog_token', token);
@@ -848,16 +629,11 @@ async function localApiFallback(endpoint, method = 'GET', body = null) {
 
   // GET /api/movies
   if (cleanEndpoint === '/api/movies' && method === 'GET') {
+    let localMovies = [];
     try {
-      const syncResult = await syncCloudDatabase();
-      return { movies: syncResult?.movies || JSON.parse(localStorage.getItem('cinelog_movies') || '[]') };
-    } catch (e) {
-      let localMovies = [];
-      try {
-        localMovies = JSON.parse(localStorage.getItem('cinelog_movies') || localStorage.getItem('cinelog_local_movies') || '[]');
-      } catch (err) {}
-      return { movies: localMovies };
-    }
+      localMovies = JSON.parse(localStorage.getItem('cinelog_movies') || localStorage.getItem('cinelog_local_movies') || '[]');
+    } catch (err) {}
+    return { movies: STATE.movies.length > 0 ? STATE.movies : localMovies };
   }
 
   // POST /api/movies
@@ -869,7 +645,7 @@ async function localApiFallback(endpoint, method = 'GET', body = null) {
 
     const newMovie = {
       id: body?.id || ('mov-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6)),
-      userId: STATE.user?.id || 'usr-1',
+      userId: STATE.user?.id || 'usr-guest',
       ...body,
       createdAt: body?.createdAt || new Date().toISOString()
     };
@@ -883,7 +659,6 @@ async function localApiFallback(endpoint, method = 'GET', body = null) {
 
     localStorage.setItem('cinelog_movies', JSON.stringify(movies));
     localStorage.setItem('cinelog_local_movies', JSON.stringify(movies));
-    await pushToCloudDatabase({ movies });
     return { success: true, movie: newMovie };
   }
 
@@ -896,7 +671,6 @@ async function localApiFallback(endpoint, method = 'GET', body = null) {
       movies[idx] = { ...movies[idx], ...body, updatedAt: new Date().toISOString() };
       localStorage.setItem('cinelog_movies', JSON.stringify(movies));
       localStorage.setItem('cinelog_local_movies', JSON.stringify(movies));
-      pushToCloudDatabase({ movies });
       return { success: true, movie: movies[idx] };
     }
     return { success: true };
@@ -916,22 +690,13 @@ async function localApiFallback(endpoint, method = 'GET', body = null) {
       localStorage.setItem('cinelog_deleted_movie_ids', JSON.stringify(deletedIds));
     } catch (e) {}
 
-    pushToCloudDatabase({ movies });
     return { success: true };
   }
 
   // DELETE /api/movies (Delete all)
   if (cleanEndpoint === '/api/movies' && method === 'DELETE') {
-    let movies = JSON.parse(localStorage.getItem('cinelog_movies') || '[]');
-    try {
-      const deletedIds = JSON.parse(localStorage.getItem('cinelog_deleted_movie_ids') || '[]');
-      movies.forEach(m => { if (m?.id && !deletedIds.includes(m.id)) deletedIds.push(m.id); });
-      localStorage.setItem('cinelog_deleted_movie_ids', JSON.stringify(deletedIds));
-    } catch (e) {}
-
     localStorage.setItem('cinelog_movies', JSON.stringify([]));
     localStorage.setItem('cinelog_local_movies', JSON.stringify([]));
-    pushToCloudDatabase({ movies: [] });
     return { success: true };
   }
 
@@ -1002,7 +767,6 @@ async function localApiFallback(endpoint, method = 'GET', body = null) {
     }
 
     localStorage.setItem('cinelog_users', JSON.stringify(users));
-    pushToCloudDatabase({ users });
 
     const token = 'token-google-' + Date.now();
     localStorage.setItem('cinelog_token', token);
@@ -1046,7 +810,34 @@ async function apiCall(endpoint, method = 'GET', body = null) {
 }
 
 async function initAuth() {
-  await syncCloudDatabase();
+  initSupabase();
+
+  if (supabaseClient) {
+    try {
+      const { data: { session } } = await supabaseClient.auth.getSession();
+      if (session && session.user) {
+        const u = session.user;
+        const meta = u.user_metadata || {};
+        STATE.user = {
+          id: u.id,
+          email: u.email || '',
+          name: meta.full_name || meta.name || (u.email ? u.email.split('@')[0] : 'کاربر'),
+          username: meta.user_name || meta.username || (u.email ? u.email.split('@')[0] : 'user'),
+          avatar: meta.avatar_url || meta.picture || '🎬',
+          isGoogle: u.app_metadata?.provider === 'google' || Boolean(meta.avatar_url),
+          bio: 'دفترچه خاطرات سینمایی من'
+        };
+        STATE.token = session.access_token || ('token-' + u.id);
+        localStorage.setItem('cinelog_user', JSON.stringify(STATE.user));
+        localStorage.setItem('cinelog_token', STATE.token);
+        updateUserUI();
+        await loadMovies(true);
+        return;
+      }
+    } catch (e) {
+      console.warn('Supabase getSession error:', e);
+    }
+  }
 
   const storedToken = localStorage.getItem('cinelog_token');
   const storedUserStr = localStorage.getItem('cinelog_user');
@@ -1056,7 +847,7 @@ async function initAuth() {
       STATE.token = storedToken;
       STATE.user = JSON.parse(storedUserStr);
       updateUserUI();
-      await loadMovies();
+      await loadMovies(true);
       return;
     } catch (err) {
       STATE.token = '';
@@ -1069,17 +860,26 @@ async function initAuth() {
   STATE.token = '';
   STATE.user = null;
   updateUserUI();
-  await loadMovies();
+  await loadMovies(true);
 }
 
 function updateUserUI() {
   if (STATE.user) {
-    DOM.navUserName.textContent = STATE.user.name || STATE.user.username;
-    DOM.navUserAvatar.textContent = STATE.user.avatar || '🎬';
+    DOM.navUserName.textContent = STATE.user.name || STATE.user.username || 'کاربر';
+    const avatar = STATE.user.avatar || '🎬';
+    if (typeof avatar === 'string' && avatar.startsWith('http')) {
+      DOM.navUserAvatar.innerHTML = `<img src="${escapeHTML(avatar)}" alt="avatar" style="width:100%;height:100%;border-radius:50%;object-fit:cover;display:block;">`;
+    } else {
+      DOM.navUserAvatar.textContent = avatar;
+    }
 
-    DOM.authCurrentName.textContent = STATE.user.name;
-    DOM.authCurrentUsername.textContent = '@' + STATE.user.username;
-    DOM.authCurrentAvatar.textContent = STATE.user.avatar || '🎬';
+    DOM.authCurrentName.textContent = STATE.user.name || STATE.user.username;
+    DOM.authCurrentUsername.textContent = STATE.user.email ? STATE.user.email : ('@' + (STATE.user.username || ''));
+    if (typeof avatar === 'string' && avatar.startsWith('http')) {
+      DOM.authCurrentAvatar.innerHTML = `<img src="${escapeHTML(avatar)}" alt="avatar" style="width:100%;height:100%;border-radius:50%;object-fit:cover;display:block;">`;
+    } else {
+      DOM.authCurrentAvatar.textContent = avatar;
+    }
     DOM.authCurrentBio.textContent = STATE.user.bio || 'دفترچه خاطرات سینمایی من';
 
     DOM.authLoggedInView.style.display = 'block';
@@ -1090,55 +890,54 @@ function updateUserUI() {
     DOM.authLoggedInView.style.display = 'none';
     DOM.authFormView.style.display = 'block';
   }
+  updateCloudStatusUI();
 }
 
 // ========================================================
 // MOVIES DATA
 // ========================================================
 async function loadMovies(showLoading = true) {
-  let deletedIds = new Set();
-  try {
-    deletedIds = new Set(JSON.parse(localStorage.getItem('cinelog_deleted_movie_ids') || '[]'));
-  } catch (e) {}
+  // 1. If Supabase is connected and user is logged in, fetch from cloud
+  if (supabaseClient && STATE.user) {
+    try {
+      const { data, error } = await supabaseClient
+        .from('movies')
+        .select('*')
+        .eq('user_id', STATE.user.id)
+        .order('created_at', { ascending: false });
 
-  // 1. First, always display existing local movies immediately (excluding deleted)
+      if (!error && Array.isArray(data)) {
+        STATE.movies = data.map(movieFromDb);
+        saveLocalMovies();
+        applyFiltersAndSort();
+        updateStatsSummary();
+        return;
+      }
+    } catch (err) {
+      console.warn('Supabase loadMovies error (falling back to cache):', err);
+    }
+  }
+
+  // 2. Fallback to local storage (guest or offline)
   let localMovies = [];
   try {
     const raw = localStorage.getItem('cinelog_movies') || localStorage.getItem('cinelog_local_movies');
     if (raw) localMovies = JSON.parse(raw);
   } catch (e) {}
 
+  let deletedIds = new Set();
+  try {
+    deletedIds = new Set(JSON.parse(localStorage.getItem('cinelog_deleted_movie_ids') || '[]'));
+  } catch (e) {}
+
   if (Array.isArray(localMovies)) {
     STATE.movies = localMovies.filter(m => m && m.id && !deletedIds.has(m.id));
-    applyFiltersAndSort();
-    updateStatsSummary();
+  } else {
+    STATE.movies = [];
   }
 
-  // 2. Fetch from API or Cloud and merge safely
-  try {
-    const data = await apiCall('/api/movies');
-    const incomingMovies = (data && Array.isArray(data.movies))
-      ? data.movies
-      : (data && data.data && Array.isArray(data.data.movies))
-        ? data.data.movies
-        : [];
-
-    if (incomingMovies.length > 0 || (Array.isArray(localMovies) && localMovies.length > 0)) {
-      const movieMap = new Map();
-      incomingMovies.forEach(m => {
-        if (m && m.id && !deletedIds.has(m.id)) movieMap.set(m.id, m);
-      });
-      STATE.movies.forEach(m => {
-        if (m && m.id && !deletedIds.has(m.id)) movieMap.set(m.id, m);
-      });
-      STATE.movies = Array.from(movieMap.values());
-      saveLocalMovies();
-      applyFiltersAndSort();
-      updateStatsSummary();
-    }
-  } catch (e) {
-    console.warn('Network movie load error (using local cache):', e);
-  }
+  applyFiltersAndSort();
+  updateStatsSummary();
 }
 
 function saveLocalMovies() {
@@ -2104,12 +1903,22 @@ async function handleMovieFormSubmit(e) {
       closeMovieModal();
       showToast('مشخصات فیلم با موفقیت ویرایش شد.', 'success');
 
-      apiCall(`/api/movies/${id}`, 'PUT', payload).catch(e => console.warn(e));
-      pushToCloudDatabase({ movies: STATE.movies }).catch(e => console.warn(e));
+      if (supabaseClient && STATE.user && idx !== -1) {
+        try {
+          const row = movieToDb(STATE.movies[idx], STATE.user.id);
+          supabaseClient.from('movies').update(row).eq('id', id).catch(e => console.warn('Supabase update warning:', e));
+        } catch (e) {
+          console.warn('Supabase update error:', e);
+        }
+      }
+
+      if (!IS_STATIC_HOST) {
+        apiCall(`/api/movies/${id}`, 'PUT', payload).catch(e => console.warn(e));
+      }
     } else {
       const movieObj = {
         id: 'mov-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
-        userId: STATE.user?.id || 'usr-1',
+        userId: STATE.user?.id || 'usr-guest',
         ...payload,
         createdAt: new Date().toISOString()
       };
@@ -2121,8 +1930,18 @@ async function handleMovieFormSubmit(e) {
       closeMovieModal();
       showToast(`فیلم «${title}» با موفقیت در تاریخچه ذخیره شد!`, 'success');
 
-      apiCall('/api/movies', 'POST', movieObj).catch(e => console.warn(e));
-      pushToCloudDatabase({ movies: STATE.movies }).catch(e => console.warn(e));
+      if (supabaseClient && STATE.user) {
+        try {
+          const row = movieToDb(movieObj, STATE.user.id);
+          supabaseClient.from('movies').insert([row]).catch(e => console.warn('Supabase insert warning:', e));
+        } catch (e) {
+          console.warn('Supabase insert error:', e);
+        }
+      }
+
+      if (!IS_STATIC_HOST) {
+        apiCall('/api/movies', 'POST', movieObj).catch(e => console.warn(e));
+      }
     }
   } catch (error) {
     showToast(error.message, 'error');
@@ -2219,14 +2038,7 @@ async function deleteMovie(id) {
   closeViewModal();
   showToast(`فیلم «${title}» از تاریخچه حذف شد.`, 'info');
 
-  // 3. Immediately sync to cloud database
-  try {
-    pushToCloudDatabase({ movies: STATE.movies });
-  } catch (e) {
-    console.warn('Cloud delete sync warning:', e);
-  }
-
-  // 4. Supabase delete if active
+  // 3. Supabase delete if active
   if (supabaseClient && STATE.user) {
     try {
       await supabaseClient.from('movies').delete().eq('id', id);
@@ -2496,47 +2308,10 @@ function setupAuthModal() {
       }
     }
 
-    if (window.google?.accounts?.id) {
-      try {
-        window.google.accounts.id.prompt();
-        return;
-      } catch (e) {}
-    }
-
-    // Connect immediately to the user's Google-linked account
-    const users = JSON.parse(localStorage.getItem('cinelog_users') || '[]');
-    let googleUser = users.find(u => u.isGoogle || u.email?.toLowerCase().includes('fatemeh.sgh65@gmail.com') || u.email?.toLowerCase().includes('gmail.com'));
-    if (!googleUser) {
-      const emailInput = prompt('لطفاً آدرس ایمیل گوگل (Gmail) خود را وارد کنید:', 'fatemeh.sgh65@gmail.com');
-      if (emailInput && emailInput.trim()) {
-        const clean = emailInput.trim().toLowerCase();
-        googleUser = users.find(u => u.email?.toLowerCase() === clean);
-        if (!googleUser) {
-          googleUser = {
-            id: 'usr-google-' + Date.now(),
-            username: clean.split('@')[0],
-            email: clean,
-            name: clean.split('@')[0],
-            avatar: '🪐',
-            isGoogle: true,
-            bio: 'ورود با حساب گوگل 🎬',
-            createdAt: new Date().toISOString()
-          };
-          users.push(googleUser);
-          localStorage.setItem('cinelog_users', JSON.stringify(users));
-        }
-      }
-    }
-
-    if (googleUser) {
-      STATE.user = googleUser;
-      STATE.token = 'token-google-' + (googleUser.id || Date.now());
-      localStorage.setItem('cinelog_token', STATE.token);
-      localStorage.setItem('cinelog_user', JSON.stringify(googleUser));
-      updateUserUI();
-      DOM.authModal?.classList.remove('open');
-      showToast(`با اکانت گوگل وارد شدید! خوش آمدید، ${googleUser.name || googleUser.username} 🎬`, 'success');
-      await loadMovies();
+    showToast('برای ورود با اکانت گوگل، ابتدا باید مشخصات پروژه Supabase در فایل config.js یا تنظیمات ابری ثبت شود.', 'info');
+    if (DOM.supabaseUrlInput) {
+      DOM.supabaseUrlInput.scrollIntoView({ behavior: 'smooth' });
+      DOM.supabaseUrlInput.focus();
     }
   });
 
@@ -2989,13 +2764,13 @@ window.addEventListener('DOMContentLoaded', async () => {
 // Background auto-sync when switching back to tab or phone app
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') {
-    syncCloudDatabase().then(() => loadMovies(false));
+    if (supabaseClient && STATE.user) loadMovies(false);
   }
 });
 
-// Periodic background sync every 25 seconds
+// Periodic background sync every 30 seconds
 setInterval(() => {
   if (document.visibilityState === 'visible') {
-    syncCloudDatabase().then(() => loadMovies(false));
+    if (supabaseClient && STATE.user) loadMovies(false);
   }
-}, 25000);
+}, 30000);

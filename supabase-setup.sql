@@ -1,5 +1,5 @@
 -- ========================================================
--- کدهای ساخت جداول دیتابیس سینما لاگ در Supabase
+-- کدهای ساخت جداول و راه‌اندازی دیتابیس سینما لاگ در Supabase
 -- این کدها را کپی کرده و در بخش SQL Editor در داشبورد Supabase اجرا (Run) کنید.
 -- ========================================================
 
@@ -61,5 +61,31 @@ create policy "هر کاربر می‌تواند فیلم‌های خودش را
   for delete using (auth.uid() = user_id);
 
 
--- ۳. فعال‌سازی همگام‌سازی لحظه‌ای (Realtime Sync) بین گوشی و کامپیوتر
+-- ۳. تابع و تریگر ثبت خودکار مشخصات کاربر هنگام ورود با گوگل
+create or replace function public.handle_new_user()
+returns trigger as $$
+begin
+  insert into public.profiles (id, username, name, email, avatar, bio)
+  values (
+    new.id,
+    coalesce(new.raw_user_meta_data->>'user_name', split_part(new.email, '@', 1)),
+    coalesce(new.raw_user_meta_data->>'full_name', new.raw_user_meta_data->>'name', split_part(new.email, '@', 1)),
+    new.email,
+    coalesce(new.raw_user_meta_data->>'avatar_url', new.raw_user_meta_data->>'picture', '🎬'),
+    'دفترچه خاطرات سینمایی من'
+  )
+  on conflict (id) do update set
+    name = coalesce(excluded.name, public.profiles.name),
+    avatar = coalesce(excluded.avatar, public.profiles.avatar);
+  return new;
+end;
+$$ language plpgsql security definer;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute procedure public.handle_new_user();
+
+
+-- ۴. فعال‌سازی همگام‌سازی لحظه‌ای (Realtime Sync) بین گوشی و کامپیوتر
 alter publication supabase_realtime add table public.movies;
