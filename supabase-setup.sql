@@ -1,6 +1,6 @@
 -- ========================================================
 -- کدهای ساخت جداول و راه‌اندازی دیتابیس سینما لاگ در Supabase
--- این کدها را کپی کرده و در بخش SQL Editor در داشبورد Supabase اجرا (Run) کنید.
+-- کاملاً ایمن و قابل اجرای مجدد بدون ارور (Idempotent)
 -- ========================================================
 
 -- ۱. ساخت جدول مشخصات کاربران (Profiles)
@@ -17,12 +17,15 @@ create table if not exists public.profiles (
 -- فعال‌سازی امنیت سطح سطر (RLS) برای پروفایل‌ها
 alter table public.profiles enable row level security;
 
+drop policy if exists "پروفایل‌ها برای همه قابل مشاهده است" on public.profiles;
 create policy "پروفایل‌ها برای همه قابل مشاهده است" on public.profiles
   for select using (true);
 
+drop policy if exists "هر کاربر می‌تواند پروفایل خود را ویرایش کند" on public.profiles;
 create policy "هر کاربر می‌تواند پروفایل خود را ویرایش کند" on public.profiles
   for update using (auth.uid() = id);
 
+drop policy if exists "هر کاربر می‌تواند پروفایل خود را ثبت کند" on public.profiles;
 create policy "هر کاربر می‌تواند پروفایل خود را ثبت کند" on public.profiles
   for insert with check (auth.uid() = id);
 
@@ -48,15 +51,19 @@ create table if not exists public.movies (
 -- فعال‌سازی امنیت سطح سطر (RLS) برای فیلم‌ها
 alter table public.movies enable row level security;
 
+drop policy if exists "هر کاربر فقط فیلم‌های خودش را ببیند" on public.movies;
 create policy "هر کاربر فقط فیلم‌های خودش را ببیند" on public.movies
   for select using (auth.uid() = user_id);
 
+drop policy if exists "هر کاربر می‌تواند برای خودش فیلم ثبت کند" on public.movies;
 create policy "هر کاربر می‌تواند برای خودش فیلم ثبت کند" on public.movies
   for insert with check (auth.uid() = user_id);
 
+drop policy if exists "هر کاربر می‌تواند فیلم‌های خودش را ویرایش کند" on public.movies;
 create policy "هر کاربر می‌تواند فیلم‌های خودش را ویرایش کند" on public.movies
   for update using (auth.uid() = user_id);
 
+drop policy if exists "هر کاربر می‌تواند فیلم‌های خودش را حذف کند" on public.movies;
 create policy "هر کاربر می‌تواند فیلم‌های خودش را حذف کند" on public.movies
   for delete using (auth.uid() = user_id);
 
@@ -88,4 +95,12 @@ create trigger on_auth_user_created
 
 
 -- ۴. فعال‌سازی همگام‌سازی لحظه‌ای (Realtime Sync) بین گوشی و کامپیوتر
-alter publication supabase_realtime add table public.movies;
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables 
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'movies'
+  ) then
+    alter publication supabase_realtime add table public.movies;
+  end if;
+end $$;
